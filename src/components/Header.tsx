@@ -10,7 +10,13 @@ import {
   Zap,
   Smartphone,
   User,
-  LogIn
+  LogIn,
+  Share2,
+  Copy,
+  Check,
+  Globe,
+  ExternalLink,
+  X
 } from 'lucide-react';
 import { AVAILABLE_MODELS } from '../data/initialData';
 import { AuthUser } from '../types';
@@ -47,7 +53,21 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenProfileModal,
 }) => {
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const currentModel = AVAILABLE_MODELS.find(m => m.id === selectedModel) || AVAILABLE_MODELS[0];
+
+  const publicUrl = typeof window !== 'undefined' 
+    ? (window.location.href.includes('ais-dev') 
+        ? window.location.href.replace('ais-dev', 'ais-pre') 
+        : window.location.href)
+    : 'https://ais-pre-eh4hozmwqvmtzjmi6k5s2d-695832131344.us-east1.run.app';
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(publicUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
 
   return (
     <header className="h-16 border-b border-[var(--border-subtle)] flex items-center justify-between px-3 lg:px-8 bg-black/10 backdrop-blur-md z-30 select-none">
@@ -131,6 +151,16 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right Section: Controls, User Auth & Theme Toggle */}
       <div className="flex items-center gap-1.5 sm:gap-2.5">
+        {/* Public Share / Publish Button */}
+        <button
+          onClick={() => setShareModalOpen(true)}
+          className="py-1.5 px-3 rounded-xl bg-gradient-to-r from-cyan-600 via-indigo-600 to-purple-600 hover:from-cyan-500 hover:to-purple-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-cyan-600/20"
+          title="Publicar y Compartir Inteligencia Artificial"
+        >
+          <Share2 className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Publicar App</span>
+        </button>
+
         {/* User Auth Profile Button / Login Button */}
         {user ? (
           <button
@@ -199,6 +229,105 @@ export const Header: React.FC<HeaderProps> = ({
           <Settings className="w-4 h-4" />
         </button>
       </div>
+
+      {/* PUBLIC SHARE & PUBLISH MODAL */}
+      {shareModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+          <div className="relative w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden p-6 sm:p-8">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-zinc-800 mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-cyan-500 to-indigo-600 text-white shadow-lg">
+                  <Globe className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    Publicar tu Inteligencia Artificial <Sparkles className="w-4 h-4 text-cyan-400" />
+                  </h3>
+                  <p className="text-xs text-zinc-400">Comparte el enlace web público para que cualquiera pueda usar LM Chat AI</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShareModalOpen(false)}
+                className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Public Link Box */}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-zinc-300 mb-2">
+                  🌐 Enlace Web Público Listo para Compartir:
+                </label>
+                <div className="flex items-center gap-2 p-2 bg-zinc-950 border border-zinc-800 rounded-2xl">
+                  <input
+                    type="text"
+                    readOnly
+                    value={publicUrl}
+                    className="w-full bg-transparent text-xs text-cyan-300 font-mono px-2 focus:outline-none truncate"
+                  />
+                  <button
+                    onClick={handleCopyLink}
+                    className="py-2 px-3 bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all shadow-md cursor-pointer whitespace-nowrap"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>¡Copiado!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copiar Enlace</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Deployment / Sharing steps info */}
+              <div className="p-4 rounded-2xl bg-zinc-950/60 border border-zinc-800/80 space-y-2.5 text-xs text-zinc-300">
+                <div className="font-bold text-white flex items-center gap-1.5 text-xs">
+                  <Globe className="w-4 h-4 text-emerald-400" />
+                  Opciones de Publicación en AI Studio:
+                </div>
+                <ul className="list-disc pl-4 space-y-1.5 text-zinc-400 text-[11px]">
+                  <li>
+                    <strong className="text-zinc-200">Enlace Compartido:</strong> El enlace copiado arriba permite a otros probar tu aplicación en la web.
+                  </li>
+                  <li>
+                    <strong className="text-zinc-200">Botón Share en AI Studio:</strong> Puedes pulsar el botón <span className="text-indigo-400 font-semibold">Share</span> en la barra superior derecha de la pantalla de Google AI Studio para generar una URL pública permanente o publicar una demo.
+                  </li>
+                  <li>
+                    <strong className="text-zinc-200">Despliegue en Cloud Run:</strong> Si deseas hospedar en producción con tu propio dominio, puedes elegir la opción <span className="text-cyan-400 font-semibold">Deploy to Cloud Run</span> o exportar el código fuente a tu repositorio de GitHub.
+                  </li>
+                </ul>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-2">
+                <a
+                  href={publicUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-cyan-600 via-indigo-600 to-purple-600 hover:from-cyan-500 hover:to-purple-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-600/20"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>Abrir App en Nueva Pestaña</span>
+                </a>
+                <button
+                  onClick={() => setShareModalOpen(false)}
+                  className="py-3 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-xs transition-colors"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 };

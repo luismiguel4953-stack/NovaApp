@@ -120,6 +120,13 @@ export default function App() {
     }
   }, [conversations, user]);
 
+  // Return to Welcome & Login Gate screen
+  const handleReturnToWelcomeScreen = () => {
+    setGuestMode(false);
+    setUser(null);
+    setShowAuthModal(false);
+  };
+
   // Handle User Auth Success
   const handleAuthSuccess = (authUser: AuthUser, token?: string) => {
     setUser(authUser);
@@ -528,7 +535,7 @@ export default function App() {
             onTogglePinConversation={handleTogglePin}
             onOpenSettings={() => setSettingsOpen(true)}
             user={user}
-            onOpenAuthModal={() => setShowAuthModal(true)}
+            onOpenAuthModal={handleReturnToWelcomeScreen}
             onOpenProfileModal={() => setShowProfileModal(true)}
           />
 
@@ -547,7 +554,7 @@ export default function App() {
               onOpenInstallModal={() => setShowInstallModal(true)}
               conversationTitle={activeConv?.title}
               user={user}
-              onOpenAuthModal={() => setShowAuthModal(true)}
+              onOpenAuthModal={handleReturnToWelcomeScreen}
               onOpenProfileModal={() => setShowProfileModal(true)}
             />
 
