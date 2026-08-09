@@ -1,8 +1,446 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
+import React, { useState, useEffect, useRef } from 'react';
+import { Sidebar } from './components/Sidebar';
+import { Header } from './components/Header';
+import { MessageItem } from './components/MessageItem';
+import { ThinkingIndicator } from './components/ThinkingIndicator';
+import { MessageComposer } from './components/MessageComposer';
+import { SettingsModal } from './components/SettingsModal';
+import { Conversation, ChatMessage, AppSettings } from './types';
+import { SEED_CONVERSATIONS, DEFAULT_SETTINGS } from './data/initialData';
+import { sendChatMessage } from './services/chatService';
+import { Bot, Sparkles, Zap, Cpu, ShieldCheck, ArrowRight, MessageSquareCode } from 'lucide-react';
+
+const STORAGE_KEY_CONVS = 'lm_chat_ai_conversations_v2';
+const STORAGE_KEY_SETTINGS = 'lm_chat_ai_settings_v2';
 
 export default function App() {
-  return <div></div>;
+  // Load initial settings
+  const [settings, setSettings] = useState<AppSettings>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_SETTINGS);
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return DEFAULT_SETTINGS;
+  });
+
+  // Load initial conversations
+  const [conversations, setConversations] = useState<Conversation[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_CONVS);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {}
+    }
+    return SEED_CONVERSATIONS;
+  });
+
+  // Active conversation ID
+  const [activeId, setActiveId] = useState<string>(() => {
+    return conversations[0]?.id || 'conv-1';
+  });
+
+  // Sidebar toggle state (open by default on desktop)
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Settings modal open state
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // AI generating status
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  // Scroll ref for chat messages container
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Sync settings to localStorage & HTML data-theme
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
+    document.documentElement.setAttribute('data-theme', settings.theme);
+  }, [settings]);
+
+  // Sync conversations to localStorage
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_CONVS, JSON.stringify(conversations));
+  }, [conversations]);
+
+  // Scroll to bottom when new messages arrive
+  const activeConv = conversations.find(c => c.id === activeId) || conversations[0];
+
+  useEffect(() => {
+    if (settings.autoScroll) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [activeConv?.messages, isGenerating]);
+
+  // Handle create new conversation
+  const handleNewConversation = () => {
+    const newConv: Conversation = {
+      id: `conv-${Date.now()}`,
+      title: 'Nueva Transmisión',
+      messages: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      model: settings.selectedModel,
+      isPinned: false,
+    };
+
+    setConversations(prev => [newConv, ...prev]);
+    setActiveId(newConv.id);
+  };
+
+  // Delete conversation
+  const handleDeleteConversation = (id: string) => {
+    setConversations(prev => {
+      const next = prev.filter(c => c.id !== id);
+      if (next.length === 0) {
+        const fresh: Conversation = {
+          id: `conv-${Date.now()}`,
+          title: 'Nueva Transmisión',
+          messages: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          model: settings.selectedModel,
+        };
+        setActiveId(fresh.id);
+        return [fresh];
+      }
+      if (activeId === id) {
+        setActiveId(next[0].id);
+      }
+      return next;
+    });
+  };
+
+  // Rename conversation
+  const handleRenameConversation = (id: string, newTitle: string) => {
+    setConversations(prev =>
+      prev.map(c => (c.id === id ? { ...c, title: newTitle } : c))
+    );
+  };
+
+  // Toggle pin conversation
+  const handleTogglePin = (id: string) => {
+    setConversations(prev =>
+      prev.map(c => (c.id === id ? { ...c, isPinned: !c.isPinned } : c))
+    );
+  };
+
+  // Clear current active conversation history
+  const handleClearChat = () => {
+    if (!activeConv) return;
+    setConversations(prev =>
+      prev.map(c => (c.id === activeId ? { ...c, messages: [] } : c))
+    );
+  };
+
+  // Toggle dark/light theme
+  const handleToggleTheme = () => {
+    setSettings(prev => ({
+      ...prev,
+      theme: prev.theme === 'dark' ? 'light' : 'dark',
+    }));
+  };
+
+  // Handle sending a message
+  const handleSendMessage = async (text: string, attachment?: { name: string; type: 'image' | 'file' }) => {
+    if (!activeConv) return;
+
+    const userMsg: ChatMessage = {
+      id: `msg-${Date.now()}`,
+      role: 'user',
+      content: text,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      attachment,
+    };
+
+    // Auto-set title from first message if title is default
+    const updatedMessages = [...activeConv.messages, userMsg];
+    let newTitle = activeConv.title;
+    if (activeConv.messages.length === 0 && text.trim()) {
+      newTitle = text.length > 28 ? text.slice(0, 28) + '...' : text;
+    }
+
+    setConversations(prev =>
+      prev.map(c =>
+        c.id === activeId
+          ? {
+              ...c,
+              title: newTitle,
+              messages: updatedMessages,
+              updatedAt: new Date().toISOString(),
+            }
+          : c
+      )
+    );
+
+    setIsGenerating(true);
+
+    try {
+      // Prepare payload for API
+      const apiMessages = updatedMessages.map(m => ({
+        role: m.role,
+        content: m.content,
+      }));
+
+      const res = await sendChatMessage({
+        messages: apiMessages,
+        systemInstruction: settings.systemInstruction,
+        model: settings.selectedModel,
+        temperature: settings.temperature,
+      });
+
+      const assistantMsg: ChatMessage = {
+        id: `msg-${Date.now() + 1}`,
+        role: 'assistant',
+        content: res.text,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        tokens: res.tokensEstimated,
+      };
+
+      setConversations(prev =>
+        prev.map(c =>
+          c.id === activeId
+            ? {
+                ...c,
+                messages: [...c.messages, assistantMsg],
+                updatedAt: new Date().toISOString(),
+              }
+            : c
+        )
+      );
+    } catch (err) {
+      console.error("Error generating reply:", err);
+      const errorMsg: ChatMessage = {
+        id: `msg-${Date.now() + 1}`,
+        role: 'assistant',
+        content: '⚠️ Ocurrió una interrupción al generar la respuesta. Por favor, reintenta tu mensaje.',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+
+      setConversations(prev =>
+        prev.map(c =>
+          c.id === activeId ? { ...c, messages: [...c.messages, errorMsg] } : c
+        )
+      );
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Regenerate last assistant response
+  const handleRegenerate = async () => {
+    if (!activeConv || activeConv.messages.length < 2) return;
+    
+    // Remove last assistant message
+    const lastUserIdx = [...activeConv.messages].reverse().findIndex(m => m.role === 'user');
+    if (lastUserIdx === -1) return;
+
+    const actualIdx = activeConv.messages.length - 1 - lastUserIdx;
+    const trimmed = activeConv.messages.slice(0, actualIdx + 1);
+
+    setConversations(prev =>
+      prev.map(c => (c.id === activeId ? { ...c, messages: trimmed } : c))
+    );
+
+    setIsGenerating(true);
+
+    try {
+      const res = await sendChatMessage({
+        messages: trimmed.map(m => ({ role: m.role, content: m.content })),
+        systemInstruction: settings.systemInstruction,
+        model: settings.selectedModel,
+        temperature: settings.temperature,
+      });
+
+      const newAssistantMsg: ChatMessage = {
+        id: `msg-${Date.now()}`,
+        role: 'assistant',
+        content: res.text,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        tokens: res.tokensEstimated,
+      };
+
+      setConversations(prev =>
+        prev.map(c =>
+          c.id === activeId ? { ...c, messages: [...c.messages, newAssistantMsg] } : c
+        )
+      );
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Delete specific message
+  const handleDeleteMessage = (msgId: string) => {
+    setConversations(prev =>
+      prev.map(c =>
+        c.id === activeId
+          ? { ...c, messages: c.messages.filter(m => m.id !== msgId) }
+          : c
+      )
+    );
+  };
+
+  // Export data
+  const handleExportData = (format: 'json' | 'markdown') => {
+    if (!activeConv) return;
+    let dataStr = '';
+    let fileName = `${activeConv.title.replace(/\s+/g, '_')}_export`;
+
+    if (format === 'json') {
+      dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(activeConv, null, 2));
+      fileName += '.json';
+    } else {
+      let mdText = `# ${activeConv.title}\n*Modelo: ${activeConv.model}* | *Fecha: ${activeConv.createdAt}*\n\n---\n\n`;
+      activeConv.messages.forEach(m => {
+        mdText += `### ${m.role === 'user' ? '👤 Usuario' : '🤖 LM Chat AI'} (${m.timestamp})\n${m.content}\n\n`;
+      });
+      dataStr = "data:text/markdown;charset=utf-8," + encodeURIComponent(mdText);
+      fileName += '.md';
+    }
+
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", fileName);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  };
+
+  // Clear all local storage
+  const handleClearAllData = () => {
+    if (window.confirm("¿Seguro que deseas eliminar todas las conversaciones e historial local?")) {
+      localStorage.removeItem(STORAGE_KEY_CONVS);
+      setConversations(SEED_CONVERSATIONS);
+      setActiveId(SEED_CONVERSATIONS[0].id);
+      setSettingsOpen(false);
+    }
+  };
+
+  return (
+    <div className="flex h-screen w-screen overflow-hidden bg-[var(--bg-main)] text-[var(--text-primary)]">
+      {/* Sidebar Navigation */}
+      <Sidebar
+        conversations={conversations}
+        activeId={activeId}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        onSelectConversation={(id) => {
+          setActiveId(id);
+          if (window.innerWidth < 1024) setSidebarOpen(false);
+        }}
+        onNewConversation={handleNewConversation}
+        onDeleteConversation={handleDeleteConversation}
+        onRenameConversation={handleRenameConversation}
+        onTogglePinConversation={handleTogglePin}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
+
+      {/* Main Chat Stage Shell */}
+      <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+        {/* Top Header */}
+        <Header
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+          selectedModel={settings.selectedModel}
+          onSelectModel={(modelId) => setSettings(s => ({ ...s, selectedModel: modelId }))}
+          theme={settings.theme}
+          onToggleTheme={handleToggleTheme}
+          onClearChat={handleClearChat}
+          onOpenSettings={() => setSettingsOpen(true)}
+          conversationTitle={activeConv?.title}
+        />
+
+        {/* Scrollable Message List */}
+        <div className="flex-1 overflow-y-auto px-4 py-6">
+          {!activeConv || activeConv.messages.length === 0 ? (
+            /* Welcome / Empty Conversation Canvas */
+            <div className="h-full flex flex-col items-center justify-center max-w-2xl mx-auto text-center px-4 py-8 select-none">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 via-indigo-600 to-purple-700 p-0.5 shadow-[0_0_40px_rgba(99,102,241,0.4)] mb-6 flex items-center justify-center">
+                <div className="w-full h-full bg-[#09090f] rounded-[14px] flex items-center justify-center">
+                  <Bot className="w-8 h-8 text-indigo-400" />
+                </div>
+              </div>
+
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-200 to-indigo-300 bg-clip-text text-transparent mb-3">
+                🤖 LM Chat AI
+              </h1>
+              <p className="text-xs sm:text-sm text-slate-400 max-w-md mb-8 leading-relaxed">
+                Asistente conversacional de inteligencia artificial con motor full-stack, historial local y diseño fluido.
+              </p>
+
+              {/* Starter Capability Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg mb-8 text-left">
+                <button
+                  onClick={() => handleSendMessage("Ayúdame a organizar mi agenda de estudio para esta semana con bloques de enfoque.")}
+                  className="p-4 rounded-2xl bg-white/5 hover:bg-indigo-600/10 border border-white/10 hover:border-indigo-500/40 transition-all cursor-pointer group"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-xs text-white group-hover:text-indigo-300">📋 Plan de Estudio</span>
+                    <ArrowRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-indigo-400 transition-transform group-hover:translate-x-1" />
+                  </div>
+                  <p className="text-[11px] text-slate-400">Organizar agenda con técnica Pomodoro y metas diarias.</p>
+                </button>
+
+                <button
+                  onClick={() => handleSendMessage("Genera una función modular en TypeScript para validación estricta de formularios.")}
+                  className="p-4 rounded-2xl bg-white/5 hover:bg-indigo-600/10 border border-white/10 hover:border-indigo-500/40 transition-all cursor-pointer group"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-xs text-white group-hover:text-indigo-300">💻 Código TypeScript</span>
+                    <ArrowRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-indigo-400 transition-transform group-hover:translate-x-1" />
+                  </div>
+                  <p className="text-[11px] text-slate-400">Ejemplo de validación de entradas con tipos e interfaces.</p>
+                </button>
+              </div>
+
+              {/* Badges bar */}
+              <div className="flex items-center gap-3 text-[10px] font-mono text-slate-500">
+                <span className="flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3 text-emerald-400" /> Historial Local Privado
+                </span>
+                <span>•</span>
+                <span className="flex items-center gap-1">
+                  <Zap className="w-3 h-3 text-indigo-400" /> Baja Latencia
+                </span>
+              </div>
+            </div>
+          ) : (
+            /* Messages List */
+            <div className="space-y-4">
+              {activeConv.messages.map((m) => (
+                <MessageItem
+                  key={m.id}
+                  message={m}
+                  onCopyText={(txt) => navigator.clipboard.writeText(txt)}
+                  onRegenerate={m.role === 'assistant' ? handleRegenerate : undefined}
+                  onDeleteMessage={handleDeleteMessage}
+                />
+              ))}
+
+              {isGenerating && <ThinkingIndicator modelName={settings.selectedModel} />}
+
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </div>
+
+        {/* Message Input Composer */}
+        <MessageComposer
+          onSendMessage={handleSendMessage}
+          isGenerating={isGenerating}
+        />
+      </div>
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        settings={settings}
+        onUpdateSettings={(newS) => setSettings(s => ({ ...s, ...newS }))}
+        onClearAllData={handleClearAllData}
+        onExportData={handleExportData}
+      />
+    </div>
+  );
 }

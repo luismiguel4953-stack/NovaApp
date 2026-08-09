@@ -1,0 +1,162 @@
+import React, { useState } from 'react';
+import { 
+  Menu, 
+  Sun, 
+  Moon, 
+  Trash2, 
+  Settings, 
+  ChevronDown, 
+  Sparkles, 
+  Activity,
+  Zap
+} from 'lucide-react';
+import { AVAILABLE_MODELS } from '../data/initialData';
+
+interface HeaderProps {
+  sidebarOpen: boolean;
+  onToggleSidebar: () => void;
+  selectedModel: string;
+  onSelectModel: (modelId: string) => void;
+  theme: 'dark' | 'light';
+  onToggleTheme: () => void;
+  onClearChat: () => void;
+  onOpenSettings: () => void;
+  conversationTitle?: string;
+}
+
+export const Header: React.FC<HeaderProps> = ({
+  sidebarOpen,
+  onToggleSidebar,
+  selectedModel,
+  onSelectModel,
+  theme,
+  onToggleTheme,
+  onClearChat,
+  onOpenSettings,
+  conversationTitle,
+}) => {
+  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  const currentModel = AVAILABLE_MODELS.find(m => m.id === selectedModel) || AVAILABLE_MODELS[0];
+
+  return (
+    <header className="h-16 border-b border-[var(--border-subtle)] flex items-center justify-between px-4 lg:px-8 bg-black/10 backdrop-blur-md z-30 select-none">
+      {/* Left Section: Sidebar Toggle & App Status */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={onToggleSidebar}
+          className="p-2 rounded-xl hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer"
+          title={sidebarOpen ? "Cerrar panel lateral" : "Abrir panel lateral"}
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+
+        {/* System Online Status Badge */}
+        <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
+            System Online
+          </span>
+        </div>
+
+        <div className="hidden md:block h-4 w-[1px] bg-white/10" />
+
+        {/* Active Title or Model Name */}
+        <div className="text-xs font-semibold text-slate-200 truncate max-w-[180px] sm:max-w-xs">
+          {conversationTitle || 'LM Chat AI'}
+        </div>
+      </div>
+
+      {/* Center Section: Model Selector Pill */}
+      <div className="relative">
+        <button
+          onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
+          className="py-1.5 px-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-xs font-medium text-slate-200 transition-all flex items-center gap-2 cursor-pointer"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+          <span>{currentModel.name}</span>
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono">
+            {currentModel.badge}
+          </span>
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${modelDropdownOpen ? 'rotate-180' : ''}`} />
+        </button>
+
+        {/* Dropdown Options */}
+        {modelDropdownOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setModelDropdownOpen(false)}
+            />
+            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-2xl p-2 shadow-2xl z-50">
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-2 py-1">
+                Seleccionar Motor de IA
+              </div>
+              {AVAILABLE_MODELS.map(m => (
+                <button
+                  key={m.id}
+                  onClick={() => {
+                    onSelectModel(m.id);
+                    setModelDropdownOpen(false);
+                  }}
+                  className={`w-full p-2.5 rounded-xl text-left transition-all flex flex-col gap-0.5 mb-1 cursor-pointer ${
+                    m.id === selectedModel
+                      ? 'bg-indigo-600/20 border border-indigo-500/30 text-indigo-200'
+                      : 'hover:bg-white/5 text-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs">{m.name}</span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono">
+                      {m.badge}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 line-clamp-1">{m.description}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Right Section: Controls & Theme Toggle */}
+      <div className="flex items-center gap-2 sm:gap-3">
+        {/* Latency badge */}
+        <div className="hidden lg:flex items-center gap-1.5 text-[10px] font-mono text-slate-400">
+          <Zap className="w-3 h-3 text-indigo-400" />
+          <span>24ms</span>
+        </div>
+
+        {/* Clear Chat Button */}
+        <button
+          onClick={onClearChat}
+          className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+          title="Limpiar conversación actual"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+
+        {/* Theme Toggle */}
+        <button
+          onClick={onToggleTheme}
+          className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+          title={theme === 'dark' ? "Cambiar a Modo Claro" : "Cambiar a Modo Oscuro"}
+        >
+          {theme === 'dark' ? (
+            <Sun className="w-4 h-4 text-amber-400" />
+          ) : (
+            <Moon className="w-4 h-4 text-indigo-600" />
+          )}
+        </button>
+
+        {/* Settings button */}
+        <button
+          onClick={onOpenSettings}
+          className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+          title="Configuración"
+        >
+          <Settings className="w-4 h-4" />
+        </button>
+      </div>
+    </header>
+  );
+};

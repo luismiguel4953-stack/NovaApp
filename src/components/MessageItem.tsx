@@ -1,0 +1,249 @@
+import React, { useState } from 'react';
+import { motion } from 'motion/react';
+import { Copy, Check, Bot, User, Cpu, Sparkles, RefreshCw, Trash2 } from 'lucide-react';
+import { ChatMessage } from '../types';
+
+interface MessageItemProps {
+  message: ChatMessage;
+  onCopyText: (text: string) => void;
+  onRegenerate?: () => void;
+  onDeleteMessage?: (id: string) => void;
+}
+
+export const MessageItem: React.FC<MessageItemProps> = ({
+  message,
+  onCopyText,
+  onRegenerate,
+  onDeleteMessage,
+}) => {
+  const [copied, setCopied] = useState(false);
+  const isUser = message.role === 'user';
+
+  const handleCopy = () => {
+    onCopyText(message.content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+      className={`flex gap-3 max-w-4xl mx-auto my-4 ${isUser ? 'justify-end' : 'justify-start'}`}
+    >
+      {/* Bot Avatar */}
+      {!isUser && (
+        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-600 to-indigo-800 border border-indigo-400/30 flex items-center justify-center shrink-0 shadow-[0_0_12px_rgba(79,70,229,0.3)] mt-1">
+          <Bot className="w-4 h-4 text-white" />
+        </div>
+      )}
+
+      {/* Message Content Container */}
+      <div className={`group relative max-w-[85%] sm:max-w-[78%] flex flex-col`}>
+        {/* Author Label & Timestamp Header */}
+        <div className={`flex items-center gap-2 mb-1 text-[11px] font-semibold text-slate-400 ${isUser ? 'justify-end' : 'justify-start'}`}>
+          <span>{isUser ? 'Tú' : 'LM Chat AI'}</span>
+          <span className="text-[10px] text-slate-500 font-mono">• {message.timestamp}</span>
+          {message.tokens && (
+            <span className="text-[9px] px-1.5 py-0.2 rounded bg-indigo-500/10 text-indigo-400 font-mono">
+              ~{message.tokens} tokens
+            </span>
+          )}
+        </div>
+
+        {/* Bubble */}
+        <div
+          className={`p-4 sm:p-5 rounded-2xl text-sm leading-relaxed transition-all shadow-lg ${
+            isUser
+              ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-tr-none border border-indigo-500/30 shadow-[0_4px_20px_rgba(79,70,229,0.3)]'
+              : 'bg-white/5 border border-white/10 text-slate-200 rounded-tl-none backdrop-blur-md shadow-[0_4px_20px_rgba(0,0,0,0.2)]'
+          }`}
+        >
+          {/* Render Formatted Text or Code Blocks */}
+          <div className="prose prose-invert max-w-none text-sm space-y-3">
+            {renderFormattedContent(message.content)}
+          </div>
+        </div>
+
+        {/* Action Toolbar */}
+        <div
+          className={`flex items-center gap-2 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity ${
+            isUser ? 'justify-end' : 'justify-start'
+          }`}
+        >
+          <button
+            onClick={handleCopy}
+            className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors text-[11px] flex items-center gap-1 cursor-pointer"
+            title="Copiar mensaje"
+          >
+            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+            <span className="font-mono text-[10px]">{copied ? 'Copiado' : 'Copiar'}</span>
+          </button>
+
+          {!isUser && onRegenerate && (
+            <button
+              onClick={onRegenerate}
+              className="p-1 rounded text-slate-400 hover:text-indigo-400 hover:bg-white/10 transition-colors text-[11px] flex items-center gap-1 cursor-pointer"
+              title="Volver a generar respuesta"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span className="font-mono text-[10px]">Regenerar</span>
+            </button>
+          )}
+
+          {onDeleteMessage && (
+            <button
+              onClick={() => onDeleteMessage(message.id)}
+              className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-white/10 transition-colors text-[11px] cursor-pointer"
+              title="Eliminar mensaje"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* User Avatar */}
+      {isUser && (
+        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-700 border border-emerald-400/30 flex items-center justify-center shrink-0 shadow-[0_0_12px_rgba(16,185,129,0.3)] mt-1">
+          <User className="w-4 h-4 text-white" />
+        </div>
+      )}
+    </motion.div>
+  );
+};
+
+// Custom Markdown / Code Block Renderer
+function renderFormattedContent(content: string) {
+  // Split content by code blocks ```lang ... ```
+  const codeBlockRegex = /```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = codeBlockRegex.exec(content)) !== null) {
+    // Add plain text before code block
+    if (match.index > lastIndex) {
+      parts.push({
+        type: 'text',
+        value: content.slice(lastIndex, match.index),
+      });
+    }
+
+    parts.push({
+      type: 'code',
+      language: match[1] || 'code',
+      value: match[2].trim(),
+    });
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < content.length) {
+    parts.push({
+      type: 'text',
+      value: content.slice(lastIndex),
+    });
+  }
+
+  return parts.map((part, idx) => {
+    if (part.type === 'code') {
+      return <CodeBlock key={idx} language={part.language} code={part.value} />;
+    }
+
+    return (
+      <div key={idx} className="whitespace-pre-wrap leading-relaxed">
+        {formatInlineMarkdown(part.value)}
+      </div>
+    );
+  });
+}
+
+// Code Block with Copy Button
+const CodeBlock: React.FC<{ language: string; code: string }> = ({ language, code }) => {
+  const [copied, setCopied] = useState(false);
+
+  const copyCode = () => {
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="my-3 rounded-xl overflow-hidden border border-white/10 bg-black/60 font-mono text-xs shadow-inner">
+      <div className="bg-white/5 px-4 py-2 flex items-center justify-between border-b border-white/5 text-slate-400">
+        <span className="text-[11px] font-bold uppercase text-indigo-400">{language}</span>
+        <button
+          onClick={copyCode}
+          className="flex items-center gap-1.5 text-[10px] text-slate-400 hover:text-white transition-colors cursor-pointer"
+        >
+          {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+          <span>{copied ? '¡Copiado!' : 'Copiar Código'}</span>
+        </button>
+      </div>
+      <pre className="p-4 overflow-x-auto text-indigo-200/90 leading-normal">
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+};
+
+// Format Inline Markdown (bold, headings, bullet lists, inline code)
+function formatInlineMarkdown(text: string) {
+  const lines = text.split('\n');
+  return lines.map((line, lIdx) => {
+    // Headings
+    if (line.startsWith('### ')) {
+      return (
+        <h3 key={lIdx} className="text-base font-bold text-indigo-300 mt-2 mb-1">
+          {line.replace('### ', '')}
+        </h3>
+      );
+    }
+    if (line.startsWith('## ')) {
+      return (
+        <h2 key={lIdx} className="text-lg font-bold text-white mt-3 mb-1">
+          {line.replace('## ', '')}
+        </h2>
+      );
+    }
+
+    // Bullet points
+    if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
+      return (
+        <div key={lIdx} className="flex items-start gap-2 my-0.5 ml-2">
+          <span className="text-indigo-400 font-bold">•</span>
+          <span>{parseInlineStyles(line.trim().slice(2))}</span>
+        </div>
+      );
+    }
+
+    // Numbered points
+    const numMatch = line.trim().match(/^(\d+)\.\s+(.*)/);
+    if (numMatch) {
+      return (
+        <div key={lIdx} className="flex items-start gap-2 my-0.5 ml-2">
+          <span className="text-indigo-400 font-bold font-mono">{numMatch[1]}.</span>
+          <span>{parseInlineStyles(numMatch[2])}</span>
+        </div>
+      );
+    }
+
+    return <p key={lIdx} className="my-0.5">{parseInlineStyles(line)}</p>;
+  });
+}
+
+function parseInlineStyles(text: string) {
+  // Replace **bold** and `code`
+  const parts = text.split(/(\*\*.*?\*\*|`.*?`)/g);
+  return parts.map((p, i) => {
+    if (p.startsWith('**') && p.endsWith('**')) {
+      return <strong key={i} className="font-bold text-white">{p.slice(2, -2)}</strong>;
+    }
+    if (p.startsWith('`') && p.endsWith('`')) {
+      return <code key={i} className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono text-[12px]">{p.slice(1, -1)}</code>;
+    }
+    return p;
+  });
+}

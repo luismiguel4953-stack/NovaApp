@@ -1,6 +1,6 @@
 {
   "name": "LM Chat AI",
-  "description": "Asistente web local para practicar conversaciones, guardar historial y recibir respuestas útiles sin servidor.",
+  "description": "Aplicación de Inteligencia Artificial al estilo ChatGPT con panel lateral animado, soporte multimodelo, historial local y servidor Express.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
