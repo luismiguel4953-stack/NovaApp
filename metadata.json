@@ -1,0 +1,6 @@
+{
+  "name": "LM Chat AI",
+  "description": "Asistente web local para practicar conversaciones, guardar historial y recibir respuestas útiles sin servidor.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
