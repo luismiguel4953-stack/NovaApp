@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Copy, Check, Bot, User, Cpu, Sparkles, RefreshCw, Trash2 } from 'lucide-react';
+import { Copy, Check, Bot, User, Cpu, Sparkles, RefreshCw, Trash2, Volume2, Square } from 'lucide-react';
 import { ChatMessage } from '../types';
 
 interface MessageItemProps {
@@ -17,12 +17,55 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   onDeleteMessage,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const isUser = message.role === 'user';
+
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
 
   const handleCopy = () => {
     onCopyText(message.content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleToggleSpeech = () => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      alert('Tu navegador no soporta síntesis de voz (Text-to-Speech).');
+      return;
+    }
+
+    if (isSpeaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    const textToRead = cleanTextForSpeech(message.content);
+    if (!textToRead) return;
+
+    const utterance = new SpeechSynthesisUtterance(textToRead);
+    utterance.lang = 'es-ES';
+    utterance.rate = 1.0;
+
+    const voices = window.speechSynthesis.getVoices();
+    const spanishVoice = voices.find(v => v.lang.startsWith('es'));
+    if (spanishVoice) {
+      utterance.voice = spanishVoice;
+    }
+
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+
+    setIsSpeaking(true);
+    window.speechSynthesis.speak(utterance);
   };
 
   return (
@@ -79,6 +122,23 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           >
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
             <span className="font-mono text-[10px]">{copied ? 'Copiado' : 'Copiar'}</span>
+          </button>
+
+          <button
+            onClick={handleToggleSpeech}
+            className={`p-1 rounded transition-colors text-[11px] flex items-center gap-1 cursor-pointer ${
+              isSpeaking
+                ? 'text-indigo-400 bg-indigo-500/20 animate-pulse'
+                : 'text-slate-400 hover:text-white hover:bg-white/10'
+            }`}
+            title={isSpeaking ? "Detener lectura de voz" : "Escuchar respuesta (Text-to-Speech)"}
+          >
+            {isSpeaking ? (
+              <Square className="w-3.5 h-3.5 text-indigo-400" />
+            ) : (
+              <Volume2 className="w-3.5 h-3.5" />
+            )}
+            <span className="font-mono text-[10px]">{isSpeaking ? 'Detener' : 'Escuchar'}</span>
           </button>
 
           {!isUser && onRegenerate && (
@@ -246,4 +306,19 @@ function parseInlineStyles(text: string) {
     }
     return p;
   });
+}
+
+function cleanTextForSpeech(text: string): string {
+  // Replace code blocks with descriptive summary
+  let clean = text.replace(/```[\s\S]*?```/g, ' Bloque de código omitido. ');
+  // Remove markdown headers
+  clean = clean.replace(/#{1,6}\s+/g, '');
+  // Remove markdown formatting
+  clean = clean.replace(/\*\*(.*?)\*\*/g, '$1');
+  clean = clean.replace(/\*(.*?)\*/g, '$1');
+  clean = clean.replace(/`(.*?)`/g, '$1');
+  clean = clean.replace(/\[(.*?)\]\(.*?\)/g, '$1');
+  // Clean list symbols
+  clean = clean.replace(/^[\s-*+]+/gm, '');
+  return clean.trim();
 }

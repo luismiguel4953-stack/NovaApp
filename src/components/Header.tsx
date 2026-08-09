@@ -8,7 +8,8 @@ import {
   ChevronDown, 
   Sparkles, 
   Activity,
-  Zap
+  Zap,
+  Smartphone
 } from 'lucide-react';
 import { AVAILABLE_MODELS } from '../data/initialData';
 
@@ -21,6 +22,7 @@ interface HeaderProps {
   onToggleTheme: () => void;
   onClearChat: () => void;
   onOpenSettings: () => void;
+  onOpenInstallModal?: () => void;
   conversationTitle?: string;
 }
 
@@ -33,6 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleTheme,
   onClearChat,
   onOpenSettings,
+  onOpenInstallModal,
   conversationTitle,
 }) => {
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
@@ -125,6 +128,18 @@ export const Header: React.FC<HeaderProps> = ({
           <Zap className="w-3 h-3 text-indigo-400" />
           <span>24ms</span>
         </div>
+
+        {/* Install Mobile App / APK Button */}
+        {onOpenInstallModal && (
+          <button
+            onClick={onOpenInstallModal}
+            className="py-1.5 px-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+            title="Instalar App en Celular / APK GitHub"
+          >
+            <Smartphone className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="hidden sm:inline">Instalar App</span>
+          </button>
+        )}
 
         {/* Clear Chat Button */}
         <button

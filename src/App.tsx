@@ -1,19 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { AnimatePresence } from 'motion/react';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { MessageItem } from './components/MessageItem';
 import { ThinkingIndicator } from './components/ThinkingIndicator';
 import { MessageComposer } from './components/MessageComposer';
 import { SettingsModal } from './components/SettingsModal';
+import { SplashScreen } from './components/SplashScreen';
+import { MobileInstallModal } from './components/MobileInstallModal';
 import { Conversation, ChatMessage, AppSettings } from './types';
 import { SEED_CONVERSATIONS, DEFAULT_SETTINGS } from './data/initialData';
 import { sendChatMessage } from './services/chatService';
-import { Bot, Sparkles, Zap, Cpu, ShieldCheck, ArrowRight, MessageSquareCode } from 'lucide-react';
+import { Bot, Sparkles, Zap, Cpu, ShieldCheck, ArrowRight, Smartphone } from 'lucide-react';
 
 const STORAGE_KEY_CONVS = 'lm_chat_ai_conversations_v2';
 const STORAGE_KEY_SETTINGS = 'lm_chat_ai_settings_v2';
 
 export default function App() {
+  const [showSplash, setShowSplash] = useState(true);
+  const [showInstallModal, setShowInstallModal] = useState(false);
+
   // Load initial settings
   const [settings, setSettings] = useState<AppSettings>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_SETTINGS);
@@ -319,6 +325,11 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[var(--bg-main)] text-[var(--text-primary)]">
+      {/* Animated Splash Screen Logo on Launch */}
+      <AnimatePresence>
+        {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
+      </AnimatePresence>
+
       {/* Sidebar Navigation */}
       <Sidebar
         conversations={conversations}
@@ -348,6 +359,7 @@ export default function App() {
           onToggleTheme={handleToggleTheme}
           onClearChat={handleClearChat}
           onOpenSettings={() => setSettingsOpen(true)}
+          onOpenInstallModal={() => setShowInstallModal(true)}
           conversationTitle={activeConv?.title}
         />
 
@@ -356,18 +368,30 @@ export default function App() {
           {!activeConv || activeConv.messages.length === 0 ? (
             /* Welcome / Empty Conversation Canvas */
             <div className="h-full flex flex-col items-center justify-center max-w-2xl mx-auto text-center px-4 py-8 select-none">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 via-indigo-600 to-purple-700 p-0.5 shadow-[0_0_40px_rgba(99,102,241,0.4)] mb-6 flex items-center justify-center">
-                <div className="w-full h-full bg-[#09090f] rounded-[14px] flex items-center justify-center">
-                  <Bot className="w-8 h-8 text-indigo-400" />
-                </div>
+              <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-indigo-500 via-indigo-600 to-purple-700 p-0.5 shadow-[0_0_45px_rgba(99,102,241,0.5)] mb-6 flex items-center justify-center">
+                <img
+                  src="/logo.jpg"
+                  alt="LM Chat AI Logo"
+                  className="w-full h-full object-cover rounded-[22px]"
+                  referrerPolicy="no-referrer"
+                />
               </div>
 
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-200 to-indigo-300 bg-clip-text text-transparent mb-3">
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-200 to-indigo-300 bg-clip-text text-transparent mb-2">
                 🤖 LM Chat AI
               </h1>
-              <p className="text-xs sm:text-sm text-slate-400 max-w-md mb-8 leading-relaxed">
-                Asistente conversacional de inteligencia artificial con motor full-stack, historial local y diseño fluido.
+              <p className="text-xs sm:text-sm text-slate-400 max-w-md mb-6 leading-relaxed">
+                Asistente conversacional de inteligencia artificial con motor full-stack, historial local y pantalla de inicio animada.
               </p>
+
+              {/* Install Mobile App Banner */}
+              <button
+                onClick={() => setShowInstallModal(true)}
+                className="mb-8 py-2.5 px-4 rounded-2xl bg-gradient-to-r from-indigo-600/30 to-purple-600/30 hover:from-indigo-600/50 hover:to-purple-600/50 border border-indigo-500/40 text-indigo-200 text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-lg"
+              >
+                <Smartphone className="w-4 h-4 text-indigo-400" />
+                <span>¿Quieres instalar esta app en tu celular? Ver Instrucciones / APK</span>
+              </button>
 
               {/* Starter Capability Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg mb-8 text-left">
@@ -440,6 +464,12 @@ export default function App() {
         onUpdateSettings={(newS) => setSettings(s => ({ ...s, ...newS }))}
         onClearAllData={handleClearAllData}
         onExportData={handleExportData}
+      />
+
+      {/* Mobile Install & GitHub APK Modal */}
+      <MobileInstallModal
+        isOpen={showInstallModal}
+        onClose={() => setShowInstallModal(false)}
       />
     </div>
   );
