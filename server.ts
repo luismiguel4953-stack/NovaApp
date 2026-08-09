@@ -38,6 +38,14 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+// Direct APK Download route for Android
+app.get(["/api/download-apk", "/download-apk", "/LM-Chat-AI.apk"], (req, res) => {
+  const apkPath = path.join(process.cwd(), "public", "LM-Chat-AI.apk");
+  res.setHeader("Content-Type", "application/vnd.android.package-archive");
+  res.setHeader("Content-Disposition", 'attachment; filename="LM-Chat-AI-v4.2.apk"');
+  return res.sendFile(apkPath);
+});
+
 // Chat completion API route
 app.post("/api/chat", async (req, res) => {
   try {

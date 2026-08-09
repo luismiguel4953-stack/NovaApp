@@ -11,7 +11,7 @@ import { MobileInstallModal } from './components/MobileInstallModal';
 import { Conversation, ChatMessage, AppSettings } from './types';
 import { SEED_CONVERSATIONS, DEFAULT_SETTINGS } from './data/initialData';
 import { sendChatMessage } from './services/chatService';
-import { Bot, Sparkles, Zap, Cpu, ShieldCheck, ArrowRight, Smartphone } from 'lucide-react';
+import { Bot, Sparkles, Zap, Cpu, ShieldCheck, ArrowRight, Smartphone, Download } from 'lucide-react';
 
 const STORAGE_KEY_CONVS = 'lm_chat_ai_conversations_v2';
 const STORAGE_KEY_SETTINGS = 'lm_chat_ai_settings_v2';
@@ -384,14 +384,24 @@ export default function App() {
                 Asistente conversacional de inteligencia artificial con motor full-stack, historial local y pantalla de inicio animada.
               </p>
 
-              {/* Install Mobile App Banner */}
-              <button
-                onClick={() => setShowInstallModal(true)}
-                className="mb-8 py-2.5 px-4 rounded-2xl bg-gradient-to-r from-indigo-600/30 to-purple-600/30 hover:from-indigo-600/50 hover:to-purple-600/50 border border-indigo-500/40 text-indigo-200 text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-lg"
-              >
-                <Smartphone className="w-4 h-4 text-indigo-400" />
-                <span>¿Quieres instalar esta app en tu celular? Ver Instrucciones / APK</span>
-              </button>
+              {/* Install Mobile App & Direct APK Banner */}
+              <div className="mb-8 flex flex-col sm:flex-row items-center justify-center gap-2.5 w-full max-w-md">
+                <a
+                  href="/api/download-apk"
+                  download="LM-Chat-AI-v4.2.apk"
+                  className="w-full sm:w-auto py-2.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-emerald-600/20 shrink-0"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Descargar APK (.apk)</span>
+                </a>
+                <button
+                  onClick={() => setShowInstallModal(true)}
+                  className="w-full sm:w-auto py-2.5 px-4 rounded-2xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-indigo-200 text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md"
+                >
+                  <Smartphone className="w-4 h-4 text-indigo-400" />
+                  <span>Instrucciones Celular / GitHub</span>
+                </button>
+              </div>
 
               {/* Starter Capability Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg mb-8 text-left">
