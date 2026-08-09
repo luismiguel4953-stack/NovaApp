@@ -428,7 +428,70 @@ app.get(["/api/download-apk", "/download-apk", "/LM-Chat-AI.apk"], (req, res) =>
   return res.sendFile(apkPath);
 });
 
-// Chat completion API route
+// Streaming SSE chat completion API route for ultra-fast response
+app.post("/api/chat/stream", async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  try {
+    const { messages, systemInstruction, model = "gemini-3.6-flash", temperature = 0.7 } = req.body;
+
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      res.write(`data: ${JSON.stringify({ error: "No messages provided" })}\n\n`);
+      res.write(`data: [DONE]\n\n`);
+      return res.end();
+    }
+
+    const ai = getAiClient();
+
+    if (ai) {
+      const selectedModel = model.includes("gemini") ? model : "gemini-3.6-flash";
+      const formattedContents = messages.map((m: { role: string; content: string }) => ({
+        role: m.role === "user" ? "user" : "model",
+        parts: [{ text: m.content }],
+      }));
+
+      const responseStream = await ai.models.generateContentStream({
+        model: selectedModel,
+        contents: formattedContents,
+        config: {
+          systemInstruction: systemInstruction || "Eres LM Chat AI, un asistente de inteligencia artificial avanzado, servicial, conciso y profesional en español. Respondes con formato Markdown claro, viñetas y ejemplos cuando sea útil.",
+          temperature: Number(temperature) || 0.7,
+        },
+      });
+
+      for await (const chunk of responseStream) {
+        if (chunk.text) {
+          res.write(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
+        }
+      }
+      res.write(`data: [DONE]\n\n`);
+      return res.end();
+    }
+
+    // Local smart streaming fallback if GEMINI_API_KEY is not configured
+    const lastUserMsg = messages.filter((m: { role: string }) => m.role === "user").pop()?.content || "";
+    const fallbackText = generateLocalSmartReply(lastUserMsg);
+
+    const chunks = fallbackText.split(/(\s+)/);
+    for (const chunk of chunks) {
+      res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
+      await new Promise(r => setTimeout(r, 12));
+    }
+
+    res.write(`data: [DONE]\n\n`);
+    return res.end();
+
+  } catch (err: any) {
+    console.error("Error in /api/chat/stream:", err);
+    res.write(`data: ${JSON.stringify({ text: "\n\n⚠️ Interrupción en el flujo de streaming. Intentando reconectar..." })}\n\n`);
+    res.write(`data: [DONE]\n\n`);
+    return res.end();
+  }
+});
+
+// Non-streaming chat completion API route
 app.post("/api/chat", async (req, res) => {
   try {
     const { messages, systemInstruction, model = "gemini-3.6-flash", temperature = 0.7 } = req.body;

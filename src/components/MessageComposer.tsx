@@ -7,7 +7,8 @@ import {
   X, 
   Image as ImageIcon,
   Zap,
-  CornerDownLeft
+  CornerDownLeft,
+  AlertCircle
 } from 'lucide-react';
 
 interface MessageComposerProps {
@@ -30,6 +31,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
   const [inputText, setInputText] = useState('');
   const [attachment, setAttachment] = useState<{ name: string; type: 'image' | 'file' } | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -77,16 +79,92 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
     setInputText(`Por favor, analiza en detalle el siguiente requerimiento, proporcionando ejemplos claros y estructura profesional: "${inputText.trim()}"`);
   };
 
-  const toggleVoiceRecording = () => {
-    if (!isRecording) {
-      setIsRecording(true);
-      // Simulate voice dictation text insertion
-      setTimeout(() => {
-        setInputText(prev => (prev ? `${prev} ` : '') + 'Generar resumen estratégico de rendimiento...');
-        setIsRecording(false);
-      }, 2500);
-    } else {
+  const recognitionRef = useRef<any>(null);
+
+  // Initialize SpeechRecognition if available
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        try {
+          const recognition = new SpeechRecognition();
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.lang = 'es-ES';
+
+          recognition.onresult = (event: any) => {
+            let transcript = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+              transcript += event.results[i][0].transcript;
+            }
+            if (transcript) {
+              setInputText((prev) => {
+                const cleanedPrev = prev.trim();
+                return cleanedPrev ? `${cleanedPrev} ${transcript}` : transcript;
+              });
+            }
+          };
+
+          recognition.onerror = (event: any) => {
+            console.warn("Speech recognition notice:", event.error);
+            setIsRecording(false);
+            if (event.error === 'not-allowed') {
+              setMicError("El navegador bloqueó el micrófono. Permite el acceso al micrófono en los ajustes de tu navegador.");
+            } else if (event.error !== 'no-speech') {
+              setMicError(`Aviso de dictado por voz: ${event.error}`);
+            }
+          };
+
+          recognition.onend = () => {
+            setIsRecording(false);
+          };
+
+          recognitionRef.current = recognition;
+        } catch (e) {
+          console.warn("Could not instantiate SpeechRecognition:", e);
+        }
+      }
+    }
+  }, []);
+
+  const toggleVoiceRecording = async () => {
+    setMicError(null);
+
+    if (isRecording) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
       setIsRecording(false);
+      return;
+    }
+
+    // Explicitly request media permission if supported
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
+      } catch (err: any) {
+        console.warn("Microphone access denied:", err);
+        if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError') {
+          setMicError("Permiso de micrófono denegado. Permite el acceso en el ícono de candado del navegador.");
+          return;
+        }
+      }
+    }
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.start();
+        setIsRecording(true);
+      } catch (e: any) {
+        console.warn("Error starting speech recognition:", e);
+        setMicError("Permiso de micrófono no otorgado o reconocimiento de voz ocupado.");
+        setIsRecording(false);
+      }
+    } else {
+      setMicError("Tu navegador o el entorno actual no soporta la API de reconocimiento de voz.");
     }
   };
 
@@ -110,6 +188,58 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
         ))}
       </div>
 
+      {/* Live User Typing Mascot Badge */}
+      {inputText.trim() && (
+        <div className="mb-2 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950/90 border border-[var(--accent-primary)] text-xs shadow-lg w-fit animate-fade-in backdrop-blur-md">
+          <div className="relative w-5 h-5 rounded-lg bg-slate-900 border border-cyan-400 flex items-center justify-center shrink-0 overflow-hidden">
+            <div className="flex gap-0.5">
+              <span className="w-1 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+              <span className="w-1 h-1.5 rounded-full bg-pink-500 animate-pulse" />
+            </div>
+          </div>
+          <span className="font-semibold text-[11px] accent-text flex items-center gap-1.5">
+            <span>✍️ Escribiendo mensaje para LM Chat AI...</span>
+            <span className="text-[9px] font-mono px-1.5 py-0.2 rounded accent-bg">
+              {inputText.length} caracteres
+            </span>
+          </span>
+        </div>
+      )}
+
+      {/* Voice Dictation Error / Permission Notice */}
+      {micError && (
+        <div className="mb-2 flex items-center justify-between px-3 py-2 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs">
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="truncate">{micError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setMicError(null)}
+            className="p-1 hover:text-white shrink-0 ml-2 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Voice Dictation Active Wave Banner */}
+      {isRecording && (
+        <div className="mb-2 flex items-center justify-between px-4 py-2 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs animate-pulse">
+          <div className="flex items-center gap-2">
+            <Mic className="w-4 h-4 text-rose-400 animate-bounce" />
+            <span className="font-bold">Escuchando dictado por voz... Habla ahora.</span>
+          </div>
+          <button
+            type="button"
+            onClick={toggleVoiceRecording}
+            className="px-2 py-0.5 rounded bg-rose-600 text-white font-bold text-[10px]"
+          >
+            Detener
+          </button>
+        </div>
+      )}
+
       {/* Attachment Chip Preview */}
       {attachment && (
         <div className="mb-2 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-xs text-indigo-300 w-fit">
@@ -130,7 +260,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
         onSubmit={handleSubmit}
         className={`relative rounded-2xl bg-[var(--bg-input)] border transition-all shadow-2xl overflow-hidden ${
           inputText.trim()
-            ? 'border-indigo-500/50 shadow-[0_0_25px_rgba(99,102,241,0.2)]'
+            ? 'accent-border accent-glow'
             : 'border-[var(--border-subtle)]'
         }`}
       >
@@ -201,7 +331,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
               disabled={(!inputText.trim() && !attachment) || isGenerating}
               className={`py-2 px-4 rounded-xl font-medium text-xs transition-all flex items-center gap-1.5 cursor-pointer ${
                 inputText.trim() && !isGenerating
-                  ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-[0_0_15px_rgba(99,102,241,0.5)] hover:scale-105'
+                  ? 'btn-accent hover:scale-105'
                   : 'bg-white/10 text-slate-500 cursor-not-allowed'
               }`}
             >

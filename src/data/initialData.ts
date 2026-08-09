@@ -27,6 +27,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   systemInstruction: 'Eres LM Chat AI, un asistente de inteligencia artificial avanzado, servicial, conciso y profesional en español. Respondes con estructura clara, bloques de código estilizados y respuestas analíticas.',
   temperature: 0.7,
   autoScroll: true,
+  accentColor: 'indigo',
+  backgroundStyle: 'dark',
+  personaPreset: 'general',
+  autoVoiceResponse: true,
+  voiceSpeed: 1.0,
+  voicePitch: 1.0,
 };
 
 export const SEED_CONVERSATIONS: Conversation[] = [

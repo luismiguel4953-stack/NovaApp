@@ -30,6 +30,15 @@ export interface AppSettings {
   systemInstruction: string;
   temperature: number;
   autoScroll: boolean;
+  // Ultra-Customization Settings
+  accentColor: 'indigo' | 'emerald' | 'rose' | 'amber' | 'cyan' | 'purple' | 'cyberpunk';
+  backgroundStyle: 'dark' | 'grid' | 'cosmos' | 'oled' | 'cyberpunk';
+  personaPreset: 'general' | 'coder' | 'creative' | 'executive' | 'tutor';
+  // Voice & Speech Settings
+  autoVoiceResponse: boolean;
+  voiceSpeed: number; // 0.5 to 1.5
+  voicePitch: number; // 0.5 to 1.5
+  voiceName?: string;
 }
 
 export interface AuthUser {

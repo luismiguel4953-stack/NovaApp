@@ -9,18 +9,21 @@ import { SettingsModal } from './components/SettingsModal';
 import { SplashScreen } from './components/SplashScreen';
 import { MobileInstallModal } from './components/MobileInstallModal';
 import { AuthModal } from './components/auth/AuthModal';
+import { AuthGate } from './components/auth/AuthGate';
 import { UserProfileModal } from './components/auth/UserProfileModal';
+import { CyberpunkParticles } from './components/CyberpunkParticles';
 import { Conversation, ChatMessage, AppSettings, AuthUser } from './types';
 import { SEED_CONVERSATIONS, DEFAULT_SETTINGS } from './data/initialData';
-import { sendChatMessage } from './services/chatService';
+import { sendChatMessage, sendChatMessageStream } from './services/chatService';
 import { fetchCurrentUser, logoutUser, getStoredToken } from './services/authService';
-import { Bot, Sparkles, Zap, Cpu, ShieldCheck, ArrowRight, Smartphone, LogIn, User } from 'lucide-react';
+import { Bot, Sparkles, Zap, Cpu, ShieldCheck, ArrowRight, Smartphone, LogIn, User, Volume2 } from 'lucide-react';
 
 const STORAGE_KEY_CONVS = 'lm_chat_ai_conversations_v2';
 const STORAGE_KEY_SETTINGS = 'lm_chat_ai_settings_v2';
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
+  const [guestMode, setGuestMode] = useState(false);
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -30,7 +33,7 @@ export default function App() {
   const [settings, setSettings] = useState<AppSettings>(() => {
     const saved = localStorage.getItem(STORAGE_KEY_SETTINGS);
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) {}
+      try { return { ...DEFAULT_SETTINGS, ...JSON.parse(saved) }; } catch (e) {}
     }
     return DEFAULT_SETTINGS;
   });
@@ -91,10 +94,12 @@ export default function App() {
     checkAuth();
   }, []);
 
-  // Sync settings to localStorage & HTML data-theme
+  // Sync settings to localStorage & HTML attributes
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
     document.documentElement.setAttribute('data-theme', settings.theme);
+    document.documentElement.setAttribute('data-accent', settings.accentColor || 'indigo');
+    document.documentElement.setAttribute('data-bg', settings.backgroundStyle || 'dark');
   }, [settings]);
 
   // Sync conversations to localStorage & backend if user logged in
@@ -116,8 +121,9 @@ export default function App() {
   }, [conversations, user]);
 
   // Handle User Auth Success
-  const handleAuthSuccess = (authUser: AuthUser) => {
+  const handleAuthSuccess = (authUser: AuthUser, token?: string) => {
     setUser(authUser);
+    setGuestMode(false);
     if (authUser.preferences?.theme) {
       setSettings(s => ({ ...s, theme: authUser.preferences?.theme || s.theme }));
     }
@@ -127,8 +133,41 @@ export default function App() {
   const handleLogout = () => {
     logoutUser();
     setUser(null);
+    setGuestMode(false);
     setConversations(SEED_CONVERSATIONS);
     setActiveId(SEED_CONVERSATIONS[0].id);
+  };
+
+  // Auto TTS Read Function for Assistant Messages
+  const speakTextIfEnabled = (text: string, forceOverride = false) => {
+    if ((!settings.autoVoiceResponse && !forceOverride) || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    
+    try {
+      window.speechSynthesis.cancel();
+      const cleanText = text.replace(/```[\s\S]*?```/g, '').replace(/[*#`_]/g, '').trim();
+      if (!cleanText) return;
+
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.lang = 'es-ES';
+      utterance.rate = settings.voiceSpeed || 1.0;
+      utterance.pitch = settings.voicePitch || 1.0;
+
+      const voices = window.speechSynthesis.getVoices();
+      let selectedVoice = null;
+      if (settings.voiceName) {
+        selectedVoice = voices.find(v => v.name === settings.voiceName);
+      }
+      if (!selectedVoice) {
+        selectedVoice = voices.find(v => v.lang.startsWith('es')) || voices[0];
+      }
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+      }
+
+      window.speechSynthesis.speak(utterance);
+    } catch (e) {
+      console.warn("Speech synthesis error:", e);
+    }
   };
 
   // Scroll to bottom when new messages arrive
@@ -250,32 +289,59 @@ export default function App() {
         content: m.content,
       }));
 
-      const res = await sendChatMessage({
-        messages: apiMessages,
-        systemInstruction: settings.systemInstruction,
-        model: settings.selectedModel,
-        temperature: settings.temperature,
-      });
-
-      const assistantMsg: ChatMessage = {
-        id: `msg-${Date.now() + 1}`,
+      const assistantMsgId = `msg-${Date.now() + 1}`;
+      const initialAssistantMsg: ChatMessage = {
+        id: assistantMsgId,
         role: 'assistant',
-        content: res.text,
+        content: '',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        tokens: res.tokensEstimated,
       };
 
+      // Create assistant message placeholder immediately
       setConversations(prev =>
         prev.map(c =>
           c.id === activeId
             ? {
                 ...c,
-                messages: [...c.messages, assistantMsg],
+                messages: [...c.messages, initialAssistantMsg],
                 updatedAt: new Date().toISOString(),
               }
             : c
         )
       );
+
+      let accumulatedText = '';
+      await sendChatMessageStream(
+        {
+          messages: apiMessages,
+          systemInstruction: settings.systemInstruction,
+          model: settings.selectedModel,
+          temperature: settings.temperature,
+        },
+        (chunk) => {
+          accumulatedText += chunk;
+          setConversations(prev =>
+            prev.map(c => {
+              if (c.id !== activeId) return c;
+              const updated = c.messages.map(m =>
+                m.id === assistantMsgId
+                  ? {
+                      ...m,
+                      content: accumulatedText,
+                      tokens: Math.round(accumulatedText.length / 4),
+                    }
+                  : m
+              );
+              return { ...c, messages: updated };
+            })
+          );
+        }
+      );
+
+      // Speak response out loud if auto voice enabled
+      if (accumulatedText) {
+        speakTextIfEnabled(accumulatedText);
+      }
     } catch (err) {
       console.error("Error generating reply:", err);
       const errorMsg: ChatMessage = {
@@ -313,26 +379,53 @@ export default function App() {
     setIsGenerating(true);
 
     try {
-      const res = await sendChatMessage({
-        messages: trimmed.map(m => ({ role: m.role, content: m.content })),
-        systemInstruction: settings.systemInstruction,
-        model: settings.selectedModel,
-        temperature: settings.temperature,
-      });
-
-      const newAssistantMsg: ChatMessage = {
-        id: `msg-${Date.now()}`,
+      const newAssistantMsgId = `msg-${Date.now()}`;
+      const initialMsg: ChatMessage = {
+        id: newAssistantMsgId,
         role: 'assistant',
-        content: res.text,
+        content: '',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        tokens: res.tokensEstimated,
       };
 
       setConversations(prev =>
         prev.map(c =>
-          c.id === activeId ? { ...c, messages: [...c.messages, newAssistantMsg] } : c
+          c.id === activeId ? { ...c, messages: [...c.messages, initialMsg] } : c
         )
       );
+
+      let accumulatedText = '';
+      await sendChatMessageStream(
+        {
+          messages: trimmed.map(m => ({ role: m.role, content: m.content })),
+          systemInstruction: settings.systemInstruction,
+          model: settings.selectedModel,
+          temperature: settings.temperature,
+        },
+        (chunk) => {
+          accumulatedText += chunk;
+          setConversations(prev =>
+            prev.map(c => {
+              if (c.id !== activeId) return c;
+              const updated = c.messages.map(m =>
+                m.id === newAssistantMsgId
+                  ? {
+                      ...m,
+                      content: accumulatedText,
+                      tokens: Math.round(accumulatedText.length / 4),
+                    }
+                  : m
+              );
+              return { ...c, messages: updated };
+            })
+          );
+        }
+      );
+
+      if (accumulatedText) {
+        speakTextIfEnabled(accumulatedText);
+      }
+    } catch (err) {
+      console.error("Regeneration error:", err);
     } finally {
       setIsGenerating(false);
     }
@@ -385,180 +478,215 @@ export default function App() {
     }
   };
 
+  // Background style helper
+  const getBgStyleClass = () => {
+    switch (settings.backgroundStyle) {
+      case 'grid':
+        return 'bg-[radial-gradient(#1e1b4b_1px,transparent_1px)] [background-size:16px_16px] bg-[#070710]';
+      case 'cosmos':
+        return 'bg-gradient-to-br from-[#090a16] via-[#050611] to-[#0d091a]';
+      case 'oled':
+        return 'bg-black text-white';
+      case 'cyberpunk':
+        return 'bg-[#03001e] text-[#00f0ff]';
+      default:
+        return 'bg-[var(--bg-main)]';
+    }
+  };
+
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[var(--bg-main)] text-[var(--text-primary)]">
-      {/* Animated Splash Screen Logo on Launch */}
+    <div className={`flex h-screen w-screen overflow-hidden ${getBgStyleClass()} text-[var(--text-primary)] transition-colors duration-300 relative`}>
+      {/* Cyberpunk Particles Background Layer */}
+      {settings.backgroundStyle === 'cyberpunk' && <CyberpunkParticles />}
+
+      {/* 1. Animated Splash Screen Logo on Launch */}
       <AnimatePresence>
         {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
       </AnimatePresence>
 
-      {/* Sidebar Navigation */}
-      <Sidebar
-        conversations={conversations}
-        activeId={activeId}
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        onSelectConversation={(id) => {
-          setActiveId(id);
-          if (window.innerWidth < 1024) setSidebarOpen(false);
-        }}
-        onNewConversation={handleNewConversation}
-        onDeleteConversation={handleDeleteConversation}
-        onRenameConversation={handleRenameConversation}
-        onTogglePinConversation={handleTogglePin}
-        onOpenSettings={() => setSettingsOpen(true)}
-        user={user}
-        onOpenAuthModal={() => setShowAuthModal(true)}
-        onOpenProfileModal={() => setShowProfileModal(true)}
-      />
-
-      {/* Main Chat Stage Shell */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-        {/* Top Header */}
-        <Header
-          sidebarOpen={sidebarOpen}
-          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-          selectedModel={settings.selectedModel}
-          onSelectModel={(modelId) => setSettings(s => ({ ...s, selectedModel: modelId }))}
-          theme={settings.theme}
-          onToggleTheme={handleToggleTheme}
-          onClearChat={handleClearChat}
-          onOpenSettings={() => setSettingsOpen(true)}
-          onOpenInstallModal={() => setShowInstallModal(true)}
-          conversationTitle={activeConv?.title}
-          user={user}
-          onOpenAuthModal={() => setShowAuthModal(true)}
-          onOpenProfileModal={() => setShowProfileModal(true)}
+      {/* 2. Mandatory Login / Auth Gate Screen if user not logged in after splash */}
+      {!showSplash && !user && !guestMode ? (
+        <AuthGate
+          onSuccess={handleAuthSuccess}
+          onContinueAsGuest={() => setGuestMode(true)}
         />
+      ) : (
+        <>
+          {/* Sidebar Navigation */}
+          <Sidebar
+            conversations={conversations}
+            activeId={activeId}
+            isOpen={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+            onSelectConversation={(id) => {
+              setActiveId(id);
+              if (window.innerWidth < 1024) setSidebarOpen(false);
+            }}
+            onNewConversation={handleNewConversation}
+            onDeleteConversation={handleDeleteConversation}
+            onRenameConversation={handleRenameConversation}
+            onTogglePinConversation={handleTogglePin}
+            onOpenSettings={() => setSettingsOpen(true)}
+            user={user}
+            onOpenAuthModal={() => setShowAuthModal(true)}
+            onOpenProfileModal={() => setShowProfileModal(true)}
+          />
 
-        {/* Scrollable Message List */}
-        <div className="flex-1 overflow-y-auto px-4 py-6">
-          {!activeConv || activeConv.messages.length === 0 ? (
-            /* Welcome / Empty Conversation Canvas */
-            <div className="h-full flex flex-col items-center justify-center max-w-2xl mx-auto text-center px-4 py-8 select-none">
-              <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-indigo-500 via-indigo-600 to-purple-700 p-0.5 shadow-[0_0_45px_rgba(99,102,241,0.5)] mb-6 flex items-center justify-center">
-                <img
-                  src="/logo.jpg"
-                  alt="LM Chat AI Logo"
-                  className="w-full h-full object-cover rounded-[22px]"
-                  referrerPolicy="no-referrer"
-                />
-              </div>
+          {/* Main Chat Stage Shell */}
+          <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+            {/* Top Header */}
+            <Header
+              sidebarOpen={sidebarOpen}
+              onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+              selectedModel={settings.selectedModel}
+              onSelectModel={(modelId) => setSettings(s => ({ ...s, selectedModel: modelId }))}
+              theme={settings.theme}
+              onToggleTheme={handleToggleTheme}
+              onClearChat={handleClearChat}
+              onOpenSettings={() => setSettingsOpen(true)}
+              onOpenInstallModal={() => setShowInstallModal(true)}
+              conversationTitle={activeConv?.title}
+              user={user}
+              onOpenAuthModal={() => setShowAuthModal(true)}
+              onOpenProfileModal={() => setShowProfileModal(true)}
+            />
 
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-200 to-indigo-300 bg-clip-text text-transparent mb-2">
-                🤖 LM Chat AI
-              </h1>
-              <p className="text-xs sm:text-sm text-slate-400 max-w-md mb-6 leading-relaxed">
-                Asistente conversacional de inteligencia artificial con motor full-stack, historial local y pantalla de inicio animada.
-              </p>
-
-              {/* Install Mobile App Banner */}
-              <div className="mb-8 flex items-center justify-center w-full max-w-md">
-                <button
-                  onClick={() => setShowInstallModal(true)}
-                  className="w-full py-3 px-5 rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-500 hover:to-purple-500 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-lg shadow-indigo-600/30 border border-indigo-400/40"
-                >
-                  <Smartphone className="w-4 h-4 text-indigo-200" />
-                  <span>📱 Instalar en Celular / Obtener APK Android</span>
-                </button>
-              </div>
-
-              {/* Starter Capability Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg mb-8 text-left">
-                <button
-                  onClick={() => handleSendMessage("Ayúdame a organizar mi agenda de estudio para esta semana con bloques de enfoque.")}
-                  className="p-4 rounded-2xl bg-white/5 hover:bg-indigo-600/10 border border-white/10 hover:border-indigo-500/40 transition-all cursor-pointer group"
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-bold text-xs text-white group-hover:text-indigo-300">📋 Plan de Estudio</span>
-                    <ArrowRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-indigo-400 transition-transform group-hover:translate-x-1" />
+            {/* Scrollable Message List */}
+            <div className="flex-1 overflow-y-auto px-4 py-6">
+              {!activeConv || activeConv.messages.length === 0 ? (
+                /* Welcome / Empty Conversation Canvas */
+                <div className="h-full flex flex-col items-center justify-center max-w-2xl mx-auto text-center px-4 py-8 select-none">
+                  <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-indigo-500 via-indigo-600 to-purple-700 p-0.5 shadow-[0_0_45px_rgba(99,102,241,0.5)] mb-6 flex items-center justify-center">
+                    <img
+                      src="/logo.jpg"
+                      alt="LM Chat AI Logo"
+                      className="w-full h-full object-cover rounded-[22px]"
+                      referrerPolicy="no-referrer"
+                    />
                   </div>
-                  <p className="text-[11px] text-slate-400">Organizar agenda con técnica Pomodoro y metas diarias.</p>
-                </button>
 
-                <button
-                  onClick={() => handleSendMessage("Genera una función modular en TypeScript para validación estricta de formularios.")}
-                  className="p-4 rounded-2xl bg-white/5 hover:bg-indigo-600/10 border border-white/10 hover:border-indigo-500/40 transition-all cursor-pointer group"
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-bold text-xs text-white group-hover:text-indigo-300">💻 Código TypeScript</span>
-                    <ArrowRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-indigo-400 transition-transform group-hover:translate-x-1" />
+                  <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-200 to-indigo-300 bg-clip-text text-transparent mb-2">
+                    🤖 LM Chat AI
+                  </h1>
+                  <p className="text-xs sm:text-sm text-slate-400 max-w-md mb-6 leading-relaxed">
+                    Asistente conversacional de inteligencia artificial con motor full-stack, respuesta por voz y personalización avanzada.
+                  </p>
+
+                  {/* Install Mobile App Banner */}
+                  <div className="mb-8 flex items-center justify-center w-full max-w-md">
+                    <button
+                      onClick={() => setShowInstallModal(true)}
+                      className="w-full py-3 px-5 rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-500 hover:to-purple-500 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-lg shadow-indigo-600/30 border border-indigo-400/40"
+                    >
+                      <Smartphone className="w-4 h-4 text-indigo-200" />
+                      <span>📱 Instalar en Celular / Obtener APK Android</span>
+                    </button>
                   </div>
-                  <p className="text-[11px] text-slate-400">Ejemplo de validación de entradas con tipos e interfaces.</p>
-                </button>
-              </div>
 
-              {/* Badges bar */}
-              <div className="flex items-center gap-3 text-[10px] font-mono text-slate-500">
-                <span className="flex items-center gap-1">
-                  <ShieldCheck className="w-3 h-3 text-emerald-400" /> Historial Local Privado
-                </span>
-                <span>•</span>
-                <span className="flex items-center gap-1">
-                  <Zap className="w-3 h-3 text-indigo-400" /> Baja Latencia
-                </span>
-              </div>
+                  {/* Starter Capability Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg mb-8 text-left">
+                    <button
+                      onClick={() => handleSendMessage("Ayúdame a organizar mi agenda de estudio para esta semana con bloques de enfoque.")}
+                      className="p-4 rounded-2xl bg-white/5 hover:bg-indigo-600/10 border border-white/10 hover:border-indigo-500/40 transition-all cursor-pointer group"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold text-xs text-white group-hover:text-indigo-300">📋 Plan de Estudio</span>
+                        <ArrowRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-indigo-400 transition-transform group-hover:translate-x-1" />
+                      </div>
+                      <p className="text-[11px] text-slate-400">Organizar agenda con técnica Pomodoro y metas diarias.</p>
+                    </button>
+
+                    <button
+                      onClick={() => handleSendMessage("Genera una función modular en TypeScript para validación estricta de formularios.")}
+                      className="p-4 rounded-2xl bg-white/5 hover:bg-indigo-600/10 border border-white/10 hover:border-indigo-500/40 transition-all cursor-pointer group"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold text-xs text-white group-hover:text-indigo-300">💻 Código TypeScript</span>
+                        <ArrowRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-indigo-400 transition-transform group-hover:translate-x-1" />
+                      </div>
+                      <p className="text-[11px] text-slate-400">Ejemplo de validación de entradas con tipos e interfaces.</p>
+                    </button>
+                  </div>
+
+                  {/* Badges bar */}
+                  <div className="flex items-center gap-3 text-[10px] font-mono text-slate-500">
+                    <span className="flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3 text-emerald-400" /> Historial Local Privado
+                    </span>
+                    <span>•</span>
+                    <span className="flex items-center gap-1">
+                      <Volume2 className="w-3 h-3 text-indigo-400" /> Respuesta por Voz (TTS)
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                /* Messages List */
+                <div className="space-y-4">
+                  {activeConv.messages.map((m) => (
+                    <MessageItem
+                      key={m.id}
+                      message={m}
+                      onCopyText={(txt) => navigator.clipboard.writeText(txt)}
+                      onRegenerate={m.role === 'assistant' ? handleRegenerate : undefined}
+                      onDeleteMessage={handleDeleteMessage}
+                      voiceSettings={{
+                        rate: settings.voiceSpeed,
+                        pitch: settings.voicePitch,
+                        voiceName: settings.voiceName,
+                      }}
+                    />
+                  ))}
+
+                  {isGenerating && <ThinkingIndicator modelName={settings.selectedModel} />}
+
+                  <div ref={messagesEndRef} />
+                </div>
+              )}
             </div>
-          ) : (
-            /* Messages List */
-            <div className="space-y-4">
-              {activeConv.messages.map((m) => (
-                <MessageItem
-                  key={m.id}
-                  message={m}
-                  onCopyText={(txt) => navigator.clipboard.writeText(txt)}
-                  onRegenerate={m.role === 'assistant' ? handleRegenerate : undefined}
-                  onDeleteMessage={handleDeleteMessage}
-                />
-              ))}
 
-              {isGenerating && <ThinkingIndicator modelName={settings.selectedModel} />}
+            {/* Message Input Composer */}
+            <MessageComposer
+              onSendMessage={handleSendMessage}
+              isGenerating={isGenerating}
+            />
+          </div>
 
-              <div ref={messagesEndRef} />
-            </div>
+          {/* Settings Modal */}
+          <SettingsModal
+            isOpen={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+            settings={settings}
+            onUpdateSettings={(newS) => setSettings(s => ({ ...s, ...newS }))}
+            onClearAllData={handleClearAllData}
+            onExportData={handleExportData}
+          />
+
+          {/* Mobile Install & GitHub APK Modal */}
+          <MobileInstallModal
+            isOpen={showInstallModal}
+            onClose={() => setShowInstallModal(false)}
+          />
+
+          {/* Authentication Modal (Login / Register / Forgot Password) */}
+          <AuthModal
+            isOpen={showAuthModal}
+            onClose={() => setShowAuthModal(false)}
+            onSuccess={handleAuthSuccess}
+          />
+
+          {/* User Profile Modal */}
+          {user && (
+            <UserProfileModal
+              isOpen={showProfileModal}
+              onClose={() => setShowProfileModal(false)}
+              user={user}
+              onUpdateUser={(updated) => setUser(updated)}
+              onLogout={handleLogout}
+            />
           )}
-        </div>
-
-        {/* Message Input Composer */}
-        <MessageComposer
-          onSendMessage={handleSendMessage}
-          isGenerating={isGenerating}
-        />
-      </div>
-
-      {/* Settings Modal */}
-      <SettingsModal
-        isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        settings={settings}
-        onUpdateSettings={(newS) => setSettings(s => ({ ...s, ...newS }))}
-        onClearAllData={handleClearAllData}
-        onExportData={handleExportData}
-      />
-
-      {/* Mobile Install & GitHub APK Modal */}
-      <MobileInstallModal
-        isOpen={showInstallModal}
-        onClose={() => setShowInstallModal(false)}
-      />
-
-      {/* Authentication Modal (Login / Register / Forgot Password) */}
-      <AuthModal
-        isOpen={showAuthModal}
-        onClose={() => setShowAuthModal(false)}
-        onSuccess={handleAuthSuccess}
-      />
-
-      {/* User Profile Modal */}
-      {user && (
-        <UserProfileModal
-          isOpen={showProfileModal}
-          onClose={() => setShowProfileModal(false)}
-          user={user}
-          onUpdateUser={(updated) => setUser(updated)}
-          onLogout={handleLogout}
-        />
+        </>
       )}
     </div>
   );
 }
+

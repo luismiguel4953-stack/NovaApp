@@ -8,6 +8,11 @@ interface MessageItemProps {
   onCopyText: (text: string) => void;
   onRegenerate?: () => void;
   onDeleteMessage?: (id: string) => void;
+  voiceSettings?: {
+    rate?: number;
+    pitch?: number;
+    voiceName?: string;
+  };
 }
 
 export const MessageItem: React.FC<MessageItemProps> = ({
@@ -15,6 +20,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   onCopyText,
   onRegenerate,
   onDeleteMessage,
+  voiceSettings,
 }) => {
   const [copied, setCopied] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -53,12 +59,19 @@ export const MessageItem: React.FC<MessageItemProps> = ({
 
     const utterance = new SpeechSynthesisUtterance(textToRead);
     utterance.lang = 'es-ES';
-    utterance.rate = 1.0;
+    utterance.rate = voiceSettings?.rate || 1.0;
+    utterance.pitch = voiceSettings?.pitch || 1.0;
 
     const voices = window.speechSynthesis.getVoices();
-    const spanishVoice = voices.find(v => v.lang.startsWith('es'));
-    if (spanishVoice) {
-      utterance.voice = spanishVoice;
+    let selectedVoice = null;
+    if (voiceSettings?.voiceName) {
+      selectedVoice = voices.find(v => v.name === voiceSettings.voiceName);
+    }
+    if (!selectedVoice) {
+      selectedVoice = voices.find(v => v.lang.startsWith('es')) || voices[0];
+    }
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
     }
 
     utterance.onend = () => setIsSpeaking(false);
@@ -75,10 +88,19 @@ export const MessageItem: React.FC<MessageItemProps> = ({
       transition={{ duration: 0.25 }}
       className={`flex gap-3 max-w-4xl mx-auto my-4 ${isUser ? 'justify-end' : 'justify-start'}`}
     >
-      {/* Bot Avatar */}
+      {/* Bot Mascot Figure Avatar */}
       {!isUser && (
-        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-600 to-indigo-800 border border-indigo-400/30 flex items-center justify-center shrink-0 shadow-[0_0_12px_rgba(79,70,229,0.3)] mt-1">
-          <Bot className="w-4 h-4 text-white" />
+        <div className="relative group shrink-0 mt-1">
+          <div className="absolute -inset-0.5 rounded-2xl bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-400 opacity-60 blur-[3px]" />
+          <div className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-slate-950 border border-[var(--accent-primary)] shadow-[0_0_15px_var(--accent-glow)] flex items-center justify-center overflow-hidden">
+            {/* Eyes */}
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_6px_#00f0ff] animate-pulse" />
+              <span className="w-2 h-2.5 rounded-full bg-pink-500 shadow-[0_0_6px_#ff007f] animate-pulse" />
+            </div>
+            {/* Antenna signal */}
+            <span className="absolute top-1 right-1.5 w-1 h-1 rounded-full bg-emerald-400 shadow-[0_0_4px_#10b981]" />
+          </div>
         </div>
       )}
 
@@ -86,26 +108,38 @@ export const MessageItem: React.FC<MessageItemProps> = ({
       <div className={`group relative max-w-[85%] sm:max-w-[78%] flex flex-col`}>
         {/* Author Label & Timestamp Header */}
         <div className={`flex items-center gap-2 mb-1 text-[11px] font-semibold text-slate-400 ${isUser ? 'justify-end' : 'justify-start'}`}>
-          <span>{isUser ? 'Tú' : 'LM Chat AI'}</span>
+          <span className="accent-text font-bold flex items-center gap-1">
+            {!isUser && <Bot className="w-3 h-3" />}
+            {isUser ? 'Tú' : 'LM Chat AI'}
+          </span>
           <span className="text-[10px] text-slate-500 font-mono">• {message.timestamp}</span>
           {message.tokens && (
-            <span className="text-[9px] px-1.5 py-0.2 rounded bg-indigo-500/10 text-indigo-400 font-mono">
+            <span className="text-[9px] px-1.5 py-0.2 rounded accent-bg font-mono">
               ~{message.tokens} tokens
             </span>
           )}
         </div>
 
-        {/* Bubble */}
-        <div
-          className={`p-4 sm:p-5 rounded-2xl text-sm leading-relaxed transition-all shadow-lg ${
-            isUser
-              ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-tr-none border border-indigo-500/30 shadow-[0_4px_20px_rgba(79,70,229,0.3)]'
-              : 'bg-white/5 border border-white/10 text-slate-200 rounded-tl-none backdrop-blur-md shadow-[0_4px_20px_rgba(0,0,0,0.2)]'
-          }`}
-        >
-          {/* Render Formatted Text or Code Blocks */}
-          <div className="prose prose-invert max-w-none text-sm space-y-3">
-            {renderFormattedContent(message.content)}
+        {/* Message Bubble Shell with Speech Pointer Tail */}
+        <div className="relative">
+          {/* Speech Bubble Pointer Tail */}
+          {!isUser ? (
+            <div className="absolute -left-2 top-4 w-0 h-0 border-y-[6px] border-y-transparent border-r-[8px] border-r-[var(--bg-card)] filter drop-shadow-[-2px_0_1px_var(--border-subtle)]" />
+          ) : (
+            <div className="absolute -right-2 top-4 w-0 h-0 border-y-[6px] border-y-transparent border-l-[8px] border-l-[var(--accent-primary)] filter drop-shadow-[2px_0_1px_rgba(0,0,0,0.3)]" />
+          )}
+
+          <div
+            className={`p-4 sm:p-5 rounded-2xl text-sm leading-relaxed transition-all shadow-lg ${
+              isUser
+                ? 'btn-accent rounded-tr-sm border border-white/20'
+                : 'bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[var(--text-primary)] rounded-tl-sm backdrop-blur-md shadow-[0_4px_20px_rgba(0,0,0,0.2)]'
+            }`}
+          >
+            {/* Render Formatted Text or Code Blocks */}
+            <div className="prose prose-invert max-w-none text-sm space-y-3">
+              {renderFormattedContent(message.content)}
+            </div>
           </div>
         </div>
 

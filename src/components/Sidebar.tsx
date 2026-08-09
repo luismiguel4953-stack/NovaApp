@@ -129,7 +129,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {/* New Conversation Button */}
               <button
                 onClick={onNewConversation}
-                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-medium text-sm transition-all shadow-[0_0_20px_rgba(79,70,229,0.35)] flex items-center justify-center gap-2 group cursor-pointer"
+                className="w-full py-3 px-4 rounded-xl btn-accent font-bold text-sm flex items-center justify-center gap-2 group cursor-pointer"
               >
                 <Plus className="w-4 h-4 transition-transform group-hover:rotate-90" />
                 <span>Nueva Transmisión</span>
@@ -247,14 +247,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
         onClick={() => onSelectConversation(c.id)}
         className={`group relative p-3 rounded-xl text-xs font-medium transition-all flex items-center justify-between cursor-pointer border ${
           isActive
-            ? 'bg-indigo-600/15 border-indigo-500/30 text-indigo-300 shadow-sm'
+            ? 'accent-bg text-white font-bold shadow-sm'
             : 'hover:bg-white/5 border-transparent text-slate-300 hover:text-white'
         }`}
       >
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
           <div
             className={`w-2 h-2 rounded-full shrink-0 ${
-              isActive ? 'bg-indigo-400 shadow-[0_0_8px_rgba(129,140,248,0.8)]' : 'bg-slate-600'
+              isActive ? 'bg-[var(--accent-primary)] accent-glow' : 'bg-slate-600'
             }`}
           />
 

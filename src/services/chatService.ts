@@ -17,6 +17,62 @@ export interface ChatResponseData {
   error?: string;
 }
 
+export async function sendChatMessageStream(
+  payload: ChatRequestPayload,
+  onChunk: (chunk: string) => void
+): Promise<string> {
+  try {
+    const response = await fetch('/api/chat/stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error(`Server status ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = '';
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data: ')) continue;
+        const dataStr = trimmed.slice(6);
+        if (dataStr === '[DONE]') break;
+
+        try {
+          const parsed = JSON.parse(dataStr);
+          if (parsed.text) {
+            fullText += parsed.text;
+            onChunk(parsed.text);
+          }
+        } catch (e) {}
+      }
+    }
+
+    if (fullText) return fullText;
+    throw new Error("Empty response stream");
+  } catch (err: any) {
+    console.warn("SSE Streaming failed, falling back to standard completion:", err);
+    const fallbackData = await sendChatMessage(payload);
+    onChunk(fallbackData.text);
+    return fallbackData.text;
+  }
+}
+
 export async function sendChatMessage(payload: ChatRequestPayload): Promise<ChatResponseData> {
   try {
     const response = await fetch('/api/chat', {
