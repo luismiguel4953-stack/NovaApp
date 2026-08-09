@@ -8,10 +8,13 @@ import { MessageComposer } from './components/MessageComposer';
 import { SettingsModal } from './components/SettingsModal';
 import { SplashScreen } from './components/SplashScreen';
 import { MobileInstallModal } from './components/MobileInstallModal';
-import { Conversation, ChatMessage, AppSettings } from './types';
+import { AuthModal } from './components/auth/AuthModal';
+import { UserProfileModal } from './components/auth/UserProfileModal';
+import { Conversation, ChatMessage, AppSettings, AuthUser } from './types';
 import { SEED_CONVERSATIONS, DEFAULT_SETTINGS } from './data/initialData';
 import { sendChatMessage } from './services/chatService';
-import { Bot, Sparkles, Zap, Cpu, ShieldCheck, ArrowRight, Smartphone, Download } from 'lucide-react';
+import { fetchCurrentUser, logoutUser, getStoredToken } from './services/authService';
+import { Bot, Sparkles, Zap, Cpu, ShieldCheck, ArrowRight, Smartphone, LogIn, User } from 'lucide-react';
 
 const STORAGE_KEY_CONVS = 'lm_chat_ai_conversations_v2';
 const STORAGE_KEY_SETTINGS = 'lm_chat_ai_settings_v2';
@@ -19,6 +22,9 @@ const STORAGE_KEY_SETTINGS = 'lm_chat_ai_settings_v2';
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [showInstallModal, setShowInstallModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
 
   // Load initial settings
   const [settings, setSettings] = useState<AppSettings>(() => {
@@ -58,16 +64,72 @@ export default function App() {
   // Scroll ref for chat messages container
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Fetch current user on mount
+  useEffect(() => {
+    async function checkAuth() {
+      const res = await fetchCurrentUser();
+      if (res.success && res.user) {
+        setUser(res.user);
+        // Fetch user-specific conversations from backend
+        const token = getStoredToken();
+        if (token) {
+          try {
+            const convRes = await fetch('/api/user/conversations', {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            const convData = await convRes.json();
+            if (convData.success && Array.isArray(convData.conversations) && convData.conversations.length > 0) {
+              setConversations(convData.conversations);
+              setActiveId(convData.conversations[0].id);
+            }
+          } catch (e) {
+            console.error("Error fetching user conversations:", e);
+          }
+        }
+      }
+    }
+    checkAuth();
+  }, []);
+
   // Sync settings to localStorage & HTML data-theme
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
     document.documentElement.setAttribute('data-theme', settings.theme);
   }, [settings]);
 
-  // Sync conversations to localStorage
+  // Sync conversations to localStorage & backend if user logged in
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_CONVS, JSON.stringify(conversations));
-  }, [conversations]);
+    if (user) {
+      const token = getStoredToken();
+      if (token) {
+        fetch('/api/user/conversations', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ conversations })
+        }).catch(() => {});
+      }
+    }
+  }, [conversations, user]);
+
+  // Handle User Auth Success
+  const handleAuthSuccess = (authUser: AuthUser) => {
+    setUser(authUser);
+    if (authUser.preferences?.theme) {
+      setSettings(s => ({ ...s, theme: authUser.preferences?.theme || s.theme }));
+    }
+  };
+
+  // Handle Logout
+  const handleLogout = () => {
+    logoutUser();
+    setUser(null);
+    setConversations(SEED_CONVERSATIONS);
+    setActiveId(SEED_CONVERSATIONS[0].id);
+  };
 
   // Scroll to bottom when new messages arrive
   const activeConv = conversations.find(c => c.id === activeId) || conversations[0];
@@ -345,6 +407,9 @@ export default function App() {
         onRenameConversation={handleRenameConversation}
         onTogglePinConversation={handleTogglePin}
         onOpenSettings={() => setSettingsOpen(true)}
+        user={user}
+        onOpenAuthModal={() => setShowAuthModal(true)}
+        onOpenProfileModal={() => setShowProfileModal(true)}
       />
 
       {/* Main Chat Stage Shell */}
@@ -361,6 +426,9 @@ export default function App() {
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenInstallModal={() => setShowInstallModal(true)}
           conversationTitle={activeConv?.title}
+          user={user}
+          onOpenAuthModal={() => setShowAuthModal(true)}
+          onOpenProfileModal={() => setShowProfileModal(true)}
         />
 
         {/* Scrollable Message List */}
@@ -384,22 +452,14 @@ export default function App() {
                 Asistente conversacional de inteligencia artificial con motor full-stack, historial local y pantalla de inicio animada.
               </p>
 
-              {/* Install Mobile App & Direct APK Banner */}
-              <div className="mb-8 flex flex-col sm:flex-row items-center justify-center gap-2.5 w-full max-w-md">
-                <a
-                  href="/api/download-apk"
-                  download="LM-Chat-AI-v4.2.apk"
-                  className="w-full sm:w-auto py-2.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-emerald-600/20 shrink-0"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Descargar APK (.apk)</span>
-                </a>
+              {/* Install Mobile App Banner */}
+              <div className="mb-8 flex items-center justify-center w-full max-w-md">
                 <button
                   onClick={() => setShowInstallModal(true)}
-                  className="w-full sm:w-auto py-2.5 px-4 rounded-2xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-indigo-200 text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md"
+                  className="w-full py-3 px-5 rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-500 hover:to-purple-500 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-lg shadow-indigo-600/30 border border-indigo-400/40"
                 >
-                  <Smartphone className="w-4 h-4 text-indigo-400" />
-                  <span>Instrucciones Celular / GitHub</span>
+                  <Smartphone className="w-4 h-4 text-indigo-200" />
+                  <span>📱 Instalar en Celular / Obtener APK Android</span>
                 </button>
               </div>
 
@@ -481,6 +541,24 @@ export default function App() {
         isOpen={showInstallModal}
         onClose={() => setShowInstallModal(false)}
       />
+
+      {/* Authentication Modal (Login / Register / Forgot Password) */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onSuccess={handleAuthSuccess}
+      />
+
+      {/* User Profile Modal */}
+      {user && (
+        <UserProfileModal
+          isOpen={showProfileModal}
+          onClose={() => setShowProfileModal(false)}
+          user={user}
+          onUpdateUser={(updated) => setUser(updated)}
+          onLogout={handleLogout}
+        />
+      )}
     </div>
   );
 }

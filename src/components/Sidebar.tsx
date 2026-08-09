@@ -13,9 +13,10 @@ import {
   Cpu, 
   ShieldCheck, 
   ChevronLeft,
-  Sparkles
+  LogIn,
+  User as UserIcon
 } from 'lucide-react';
-import { Conversation } from '../types';
+import { Conversation, AuthUser } from '../types';
 
 interface SidebarProps {
   conversations: Conversation[];
@@ -28,6 +29,9 @@ interface SidebarProps {
   onRenameConversation: (id: string, newTitle: string) => void;
   onTogglePinConversation: (id: string) => void;
   onOpenSettings: () => void;
+  user?: AuthUser | null;
+  onOpenAuthModal?: () => void;
+  onOpenProfileModal?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -41,6 +45,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onRenameConversation,
   onTogglePinConversation,
   onOpenSettings,
+  user,
+  onOpenAuthModal,
+  onOpenProfileModal,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -186,18 +193,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             {/* Footer / Profile & Settings */}
             <div className="p-4 border-t border-[var(--border-subtle)] bg-black/20 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 border border-white/20 flex items-center justify-center font-bold text-xs text-white shadow-md">
-                  LM
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-[var(--text-primary)]">Luis Miguel</div>
-                  <div className="flex items-center gap-1 text-[10px] text-indigo-400 font-mono">
-                    <ShieldCheck className="w-3 h-3" />
-                    <span>PRO ACCOUNT</span>
+              {user ? (
+                <button
+                  onClick={onOpenProfileModal}
+                  className="flex items-center gap-3 text-left hover:opacity-80 transition-opacity cursor-pointer group"
+                >
+                  <img
+                    src={user.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.username}`}
+                    alt={user.fullName}
+                    className="w-9 h-9 rounded-full bg-zinc-950 border border-indigo-500/40 object-cover shadow-md"
+                  />
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-[var(--text-primary)] truncate max-w-[120px]">
+                      {user.fullName}
+                    </div>
+                    <div className="flex items-center gap-1 text-[10px] text-indigo-400 font-mono">
+                      <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                      <span className="uppercase">{user.role || 'USUARIO'}</span>
+                    </div>
                   </div>
-                </div>
-              </div>
+                </button>
+              ) : (
+                <button
+                  onClick={onOpenAuthModal}
+                  className="flex items-center gap-2.5 text-left py-1 px-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-bold transition-all cursor-pointer"
+                >
+                  <LogIn className="w-4 h-4 text-indigo-400" />
+                  <span>Iniciar Sesión</span>
+                </button>
+              )}
 
               <button
                 onClick={onOpenSettings}

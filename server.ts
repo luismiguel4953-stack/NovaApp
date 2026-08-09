@@ -1,15 +1,397 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
+const JWT_SECRET = process.env.JWT_SECRET || "lm_chat_ai_secure_token_key_2026";
+
+// Ensure data directory exists
+const DATA_DIR = path.join(process.cwd(), "data");
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+const USERS_FILE = path.join(DATA_DIR, "users.json");
+const CONVERSATIONS_FILE = path.join(DATA_DIR, "conversations.json");
+const RECOVERY_FILE = path.join(DATA_DIR, "recovery.json");
+
+interface UserRecord {
+  id: string;
+  username: string;
+  fullName: string;
+  email: string;
+  passwordHash: string;
+  avatar?: string;
+  createdAt: string;
+  usageCount: number;
+  usageLimit: number;
+  role: 'user' | 'admin' | 'premium';
+  preferences?: {
+    theme?: 'dark' | 'light';
+    selectedModel?: string;
+  };
+}
+
+interface RecoveryRecord {
+  email: string;
+  code: string;
+  expiresAt: number;
+}
+
+function loadUsers(): UserRecord[] {
+  try {
+    if (fs.existsSync(USERS_FILE)) {
+      return JSON.parse(fs.readFileSync(USERS_FILE, "utf-8"));
+    }
+  } catch (e) {
+    console.error("Error loading users:", e);
+  }
+  return [];
+}
+
+function saveUsers(users: UserRecord[]) {
+  try {
+    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), "utf-8");
+  } catch (e) {
+    console.error("Error saving users:", e);
+  }
+}
+
+function loadConversationsData(): Record<string, any[]> {
+  try {
+    if (fs.existsSync(CONVERSATIONS_FILE)) {
+      return JSON.parse(fs.readFileSync(CONVERSATIONS_FILE, "utf-8"));
+    }
+  } catch (e) {
+    console.error("Error loading conversations:", e);
+  }
+  return {};
+}
+
+function saveConversationsData(data: Record<string, any[]>) {
+  try {
+    fs.writeFileSync(CONVERSATIONS_FILE, JSON.stringify(data, null, 2), "utf-8");
+  } catch (e) {
+    console.error("Error saving conversations:", e);
+  }
+}
+
+function loadRecoveryRecords(): RecoveryRecord[] {
+  try {
+    if (fs.existsSync(RECOVERY_FILE)) {
+      return JSON.parse(fs.readFileSync(RECOVERY_FILE, "utf-8"));
+    }
+  } catch (e) {}
+  return [];
+}
+
+function saveRecoveryRecords(records: RecoveryRecord[]) {
+  try {
+    fs.writeFileSync(RECOVERY_FILE, JSON.stringify(records, null, 2), "utf-8");
+  } catch (e) {}
+}
+
+function sanitizeUser(user: UserRecord) {
+  const { passwordHash, ...rest } = user;
+  return rest;
+}
+
+// Authentication Middleware
+function authenticateToken(req: any, res: any, next: any) {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+
+  if (!token) {
+    return res.status(401).json({ success: false, error: "Acceso no autorizado. Inicie sesión." });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err: any, decoded: any) => {
+    if (err) {
+      return res.status(403).json({ success: false, error: "Sesión expirada o inválida." });
+    }
+    req.userId = decoded.userId;
+    next();
+  });
+}
 
 app.use(express.json({ limit: "10mb" }));
+
+// --- AUTHENTICATION API ROUTES ---
+
+// 1. Register User
+app.post("/api/auth/register", async (req, res) => {
+  try {
+    const { username, fullName, email, password, termsAccepted } = req.body;
+
+    if (!username || !fullName || !email || !password) {
+      return res.status(400).json({ success: false, error: "Todos los campos son obligatorios." });
+    }
+
+    if (!termsAccepted) {
+      return res.status(400).json({ success: false, error: "Debes aceptar los Términos y Condiciones." });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ success: false, error: "Ingresa un correo electrónico válido." });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ success: false, error: "La contraseña debe tener al menos 6 caracteres." });
+    }
+
+    const users = loadUsers();
+    const cleanEmail = email.toLowerCase().trim();
+    const cleanUsername = username.trim().toLowerCase();
+
+    const existingUser = users.find(u => u.email.toLowerCase() === cleanEmail || u.username.toLowerCase() === cleanUsername);
+    if (existingUser) {
+      return res.status(400).json({ success: false, error: "El correo electrónico o nombre de usuario ya está registrado." });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const newUser: UserRecord = {
+      id: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      username: username.trim(),
+      fullName: fullName.trim(),
+      email: cleanEmail,
+      passwordHash,
+      avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(username)}`,
+      createdAt: new Date().toISOString(),
+      usageCount: 0,
+      usageLimit: 100,
+      role: 'user',
+      preferences: {
+        theme: 'dark',
+        selectedModel: 'gemini-3.6-flash'
+      }
+    };
+
+    users.push(newUser);
+    saveUsers(users);
+
+    const token = jwt.sign({ userId: newUser.id, email: newUser.email }, JWT_SECRET, { expiresIn: "30d" });
+
+    return res.json({
+      success: true,
+      message: "Cuenta creada exitosamente.",
+      token,
+      user: sanitizeUser(newUser)
+    });
+
+  } catch (err: any) {
+    console.error("Error in /api/auth/register:", err);
+    return res.status(500).json({ success: false, error: "Error en el servidor al registrar usuario." });
+  }
+});
+
+// 2. Login User
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const { email, password, rememberMe } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ success: false, error: "Proporciona tu correo/usuario y contraseña." });
+    }
+
+    const users = loadUsers();
+    const cleanInput = email.toLowerCase().trim();
+
+    const user = users.find(u => u.email.toLowerCase() === cleanInput || u.username.toLowerCase() === cleanInput);
+    if (!user) {
+      return res.status(400).json({ success: false, error: "Credenciales incorrectas. Verifique su correo o usuario." });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.passwordHash);
+    if (!isMatch) {
+      return res.status(400).json({ success: false, error: "Contraseña incorrecta." });
+    }
+
+    const expiresIn = rememberMe ? "30d" : "24h";
+    const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn });
+
+    return res.json({
+      success: true,
+      message: "Inicio de sesión exitoso.",
+      token,
+      user: sanitizeUser(user)
+    });
+
+  } catch (err: any) {
+    console.error("Error in /api/auth/login:", err);
+    return res.status(500).json({ success: false, error: "Error en el servidor al iniciar sesión." });
+  }
+});
+
+// 3. Get Current User Profile
+app.get("/api/auth/me", authenticateToken, (req: any, res: any) => {
+  const users = loadUsers();
+  const user = users.find(u => u.id === req.userId);
+
+  if (!user) {
+    return res.status(404).json({ success: false, error: "Usuario no encontrado." });
+  }
+
+  return res.json({
+    success: true,
+    user: sanitizeUser(user)
+  });
+});
+
+// 4. Request Password Reset (Forgot Password)
+app.post("/api/auth/forgot-password", (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ success: false, error: "Ingresa tu correo electrónico." });
+  }
+
+  const users = loadUsers();
+  const cleanEmail = email.toLowerCase().trim();
+  const user = users.find(u => u.email.toLowerCase() === cleanEmail);
+
+  if (!user) {
+    return res.status(400).json({ success: false, error: "No existe ninguna cuenta vinculada a este correo." });
+  }
+
+  // Generate 6-digit code
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const records = loadRecoveryRecords().filter(r => r.email !== cleanEmail && r.expiresAt > Date.now());
+
+  records.push({
+    email: cleanEmail,
+    code,
+    expiresAt: Date.now() + 15 * 60 * 1000 // 15 minutes
+  });
+
+  saveRecoveryRecords(records);
+
+  return res.json({
+    success: true,
+    message: `Código de verificación enviado a ${cleanEmail}. Usalo para restablecer tu contraseña.`,
+    resetCode: code // Returned directly for immediate testing & use
+  });
+});
+
+// 5. Reset Password
+app.post("/api/auth/reset-password", async (req, res) => {
+  try {
+    const { email, code, newPassword } = req.body;
+
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({ success: false, error: "Proporciona todos los campos requeridos." });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ success: false, error: "La nueva contraseña debe tener al menos 6 caracteres." });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const records = loadRecoveryRecords();
+    const validRecord = records.find(r => r.email === cleanEmail && r.code === code && r.expiresAt > Date.now());
+
+    if (!validRecord) {
+      return res.status(400).json({ success: false, error: "El código de recuperación es inválido o ha expirado." });
+    }
+
+    const users = loadUsers();
+    const user = users.find(u => u.email.toLowerCase() === cleanEmail);
+    if (!user) {
+      return res.status(404).json({ success: false, error: "Usuario no encontrado." });
+    }
+
+    user.passwordHash = await bcrypt.hash(newPassword, 10);
+    saveUsers(users);
+
+    // Clean used recovery record
+    saveRecoveryRecords(records.filter(r => r.email !== cleanEmail));
+
+    return res.json({
+      success: true,
+      message: "Contraseña restablecida exitosamente. Ahora puedes iniciar sesión con tu nueva contraseña."
+    });
+
+  } catch (err: any) {
+    console.error("Error resetting password:", err);
+    return res.status(500).json({ success: false, error: "Error al actualizar contraseña." });
+  }
+});
+
+// 6. Update Profile
+app.put("/api/auth/profile", authenticateToken, async (req: any, res: any) => {
+  try {
+    const { fullName, avatar, currentPassword, newPassword, preferences } = req.body;
+    const users = loadUsers();
+    const userIndex = users.findIndex(u => u.id === req.userId);
+
+    if (userIndex === -1) {
+      return res.status(404).json({ success: false, error: "Usuario no encontrado." });
+    }
+
+    const user = users[userIndex];
+
+    if (fullName) user.fullName = fullName.trim();
+    if (avatar) user.avatar = avatar;
+    if (preferences) {
+      user.preferences = { ...user.preferences, ...preferences };
+    }
+
+    // Change Password check if requested
+    if (newPassword) {
+      if (!currentPassword) {
+        return res.status(400).json({ success: false, error: "Proporciona tu contraseña actual para cambiarla." });
+      }
+      const isMatch = await bcrypt.compare(currentPassword, user.passwordHash);
+      if (!isMatch) {
+        return res.status(400).json({ success: false, error: "La contraseña actual es incorrecta." });
+      }
+      if (newPassword.length < 6) {
+        return res.status(400).json({ success: false, error: "La nueva contraseña debe tener al menos 6 caracteres." });
+      }
+      user.passwordHash = await bcrypt.hash(newPassword, 10);
+    }
+
+    users[userIndex] = user;
+    saveUsers(users);
+
+    return res.json({
+      success: true,
+      message: "Perfil actualizado correctamente.",
+      user: sanitizeUser(user)
+    });
+
+  } catch (err: any) {
+    console.error("Error updating profile:", err);
+    return res.status(500).json({ success: false, error: "Error al actualizar perfil." });
+  }
+});
+
+// --- USER CONVERSATIONS SYNC API ---
+
+app.get("/api/user/conversations", authenticateToken, (req: any, res: any) => {
+  const conversationsData = loadConversationsData();
+  const userConvs = conversationsData[req.userId] || [];
+  return res.json({ success: true, conversations: userConvs });
+});
+
+app.post("/api/user/conversations", authenticateToken, (req: any, res: any) => {
+  const { conversations } = req.body;
+  if (!Array.isArray(conversations)) {
+    return res.status(400).json({ success: false, error: "Formato de conversaciones inválido." });
+  }
+  const conversationsData = loadConversationsData();
+  conversationsData[req.userId] = conversations;
+  saveConversationsData(conversationsData);
+  return res.json({ success: true, message: "Conversaciones sincronizadas." });
+});
+
 
 // Helper to initialize GoogleGenAI client if key exists
 function getAiClient() {

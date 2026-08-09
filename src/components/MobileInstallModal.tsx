@@ -64,29 +64,14 @@ export const MobileInstallModal: React.FC<MobileInstallModalProps> = ({ isOpen, 
           </div>
 
           <div className="space-y-4 max-h-[68vh] overflow-y-auto pr-1">
-            {/* Direct APK Download Button */}
-            <div className="p-4 rounded-2xl bg-gradient-to-r from-indigo-600/30 via-purple-600/30 to-emerald-600/30 border border-indigo-400/50 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0 shadow-md">
-                  <Download className="w-5 h-5 text-white animate-bounce" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-xs text-white uppercase tracking-wider">
-                    Descargar Archivo APK Directo
-                  </h3>
-                  <p className="text-[11px] text-indigo-200">
-                    Paquete listo para Android (LM-Chat-AI-v4.2.apk)
-                  </p>
-                </div>
-              </div>
-              <a
-                href="/api/download-apk"
-                download="LM-Chat-AI-v4.2.apk"
-                className="w-full sm:w-auto py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shrink-0"
-              >
-                <Download className="w-4 h-4" />
-                <span>Descargar APK Ahora</span>
-              </a>
+            {/* Important notice regarding APK parsing */}
+            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs leading-relaxed space-y-1">
+              <p className="font-bold flex items-center gap-1.5 text-amber-300">
+                <span>⚠️ ¿Por qué aparece "Error al analizar el paquete"?</span>
+              </p>
+              <p className="text-[11px] text-amber-200/90">
+                Los teléfonos Android requieren que el APK sea compilado por el SDK de Android y Gradle. La compilación oficial del archivo <strong>.APK nativo e instalable</strong> se realiza automáticamente a través de <strong>GitHub Actions</strong> al exportar el proyecto.
+              </p>
             </div>
 
             {/* Direct App Link for Phone */}

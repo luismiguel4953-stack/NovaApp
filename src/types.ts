@@ -32,6 +32,29 @@ export interface AppSettings {
   autoScroll: boolean;
 }
 
+export interface AuthUser {
+  id: string;
+  username: string;
+  fullName: string;
+  email: string;
+  avatar?: string;
+  createdAt: string;
+  usageCount?: number;
+  usageLimit?: number;
+  role?: 'user' | 'admin' | 'premium';
+  preferences?: {
+    theme?: 'dark' | 'light';
+    selectedModel?: string;
+  };
+}
+
+export interface AuthState {
+  user: AuthUser | null;
+  token: string | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+}
+
 export interface ModelOption {
   id: string;
   name: string;

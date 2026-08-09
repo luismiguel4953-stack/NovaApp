@@ -7,11 +7,13 @@ import {
   Settings, 
   ChevronDown, 
   Sparkles, 
-  Activity,
   Zap,
-  Smartphone
+  Smartphone,
+  User,
+  LogIn
 } from 'lucide-react';
 import { AVAILABLE_MODELS } from '../data/initialData';
+import { AuthUser } from '../types';
 
 interface HeaderProps {
   sidebarOpen: boolean;
@@ -24,6 +26,9 @@ interface HeaderProps {
   onOpenSettings: () => void;
   onOpenInstallModal?: () => void;
   conversationTitle?: string;
+  user: AuthUser | null;
+  onOpenAuthModal: () => void;
+  onOpenProfileModal: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -37,14 +42,17 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSettings,
   onOpenInstallModal,
   conversationTitle,
+  user,
+  onOpenAuthModal,
+  onOpenProfileModal,
 }) => {
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const currentModel = AVAILABLE_MODELS.find(m => m.id === selectedModel) || AVAILABLE_MODELS[0];
 
   return (
-    <header className="h-16 border-b border-[var(--border-subtle)] flex items-center justify-between px-4 lg:px-8 bg-black/10 backdrop-blur-md z-30 select-none">
+    <header className="h-16 border-b border-[var(--border-subtle)] flex items-center justify-between px-3 lg:px-8 bg-black/10 backdrop-blur-md z-30 select-none">
       {/* Left Section: Sidebar Toggle & App Status */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5">
         <button
           onClick={onToggleSidebar}
           className="p-2 rounded-xl hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer"
@@ -64,7 +72,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="hidden md:block h-4 w-[1px] bg-white/10" />
 
         {/* Active Title or Model Name */}
-        <div className="text-xs font-semibold text-slate-200 truncate max-w-[180px] sm:max-w-xs">
+        <div className="text-xs font-semibold text-slate-200 truncate max-w-[140px] sm:max-w-xs">
           {conversationTitle || 'LM Chat AI'}
         </div>
       </div>
@@ -77,7 +85,7 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
           <span>{currentModel.name}</span>
-          <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono">
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono hidden sm:inline">
             {currentModel.badge}
           </span>
           <ChevronDown className={`w-3.5 h-3.5 transition-transform ${modelDropdownOpen ? 'rotate-180' : ''}`} />
@@ -121,30 +129,49 @@ export const Header: React.FC<HeaderProps> = ({
         )}
       </div>
 
-      {/* Right Section: Controls & Theme Toggle */}
-      <div className="flex items-center gap-2 sm:gap-3">
-        {/* Latency badge */}
-        <div className="hidden lg:flex items-center gap-1.5 text-[10px] font-mono text-slate-400">
-          <Zap className="w-3 h-3 text-indigo-400" />
-          <span>24ms</span>
-        </div>
+      {/* Right Section: Controls, User Auth & Theme Toggle */}
+      <div className="flex items-center gap-1.5 sm:gap-2.5">
+        {/* User Auth Profile Button / Login Button */}
+        {user ? (
+          <button
+            onClick={onOpenProfileModal}
+            className="py-1 px-2 sm:px-2.5 rounded-xl bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-700/80 text-white text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+            title="Mi Perfil y Configuración de Cuenta"
+          >
+            <img
+              src={user.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.username}`}
+              alt={user.fullName}
+              className="w-6 h-6 rounded-lg bg-zinc-950 object-cover border border-indigo-500/40"
+            />
+            <span className="hidden sm:inline font-bold text-xs truncate max-w-[90px]">{user.fullName.split(' ')[0]}</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+          </button>
+        ) : (
+          <button
+            onClick={onOpenAuthModal}
+            className="py-1.5 px-3 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-indigo-600/20"
+          >
+            <LogIn className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Iniciar Sesión</span>
+          </button>
+        )}
 
         {/* Install Mobile App / APK Button */}
         {onOpenInstallModal && (
           <button
             onClick={onOpenInstallModal}
-            className="py-1.5 px-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+            className="hidden sm:flex py-1.5 px-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 hover:text-white text-xs font-semibold items-center gap-1.5 transition-all cursor-pointer shadow-sm"
             title="Instalar App en Celular / APK GitHub"
           >
             <Smartphone className="w-3.5 h-3.5 text-indigo-400" />
-            <span className="hidden sm:inline">Instalar App</span>
+            <span className="hidden md:inline">App Celular</span>
           </button>
         )}
 
         {/* Clear Chat Button */}
         <button
           onClick={onClearChat}
-          className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+          className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
           title="Limpiar conversación actual"
         >
           <Trash2 className="w-4 h-4" />
@@ -153,7 +180,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Theme Toggle */}
         <button
           onClick={onToggleTheme}
-          className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+          className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
           title={theme === 'dark' ? "Cambiar a Modo Claro" : "Cambiar a Modo Oscuro"}
         >
           {theme === 'dark' ? (
@@ -166,7 +193,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Settings button */}
         <button
           onClick={onOpenSettings}
-          className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+          className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
           title="Configuración"
         >
           <Settings className="w-4 h-4" />
